@@ -9,6 +9,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.domain.model.lyrics_providers.others.NeteaseLyricsResponse
 import pl.lambada.songsync.domain.model.lyrics_providers.others.NeteaseResponse
+import pl.lambada.songsync.domain.model.lyrics_providers.others.NeteaseSong
 import pl.lambada.songsync.util.EmptyQueryException
 import pl.lambada.songsync.util.InternalErrorException
 import pl.lambada.songsync.util.networking.Ktor.client
@@ -33,6 +34,29 @@ class NeteaseAPI {
         "Cookie" to "NMTID=00OAVK3xqDG726ITU6jopU6jF2yMk0AAAGCO8l1BA; JSESSIONID-WYYY=8KQo11YK2GZP45RMlz8Kn80vHZ9%2FGvwzRKQXXy0iQoFKycWdBlQjbfT0MJrFa6hwRfmpfBYKeHliUPH287JC3hNW99WQjrh9b9RmKT%2Fg1Exc2VwHZcsqi7ITxQgfEiee50po28x5xTTZXKoP%2FRMctN2jpDeg57kdZrXz%2FD%2FWghb%5C4DuZ%3A1659124633932; _iuqxldmzr_=32; _ntes_nnid=0db6667097883aa9596ecfe7f188c3ec,1659122833973; _ntes_nuid=0db6667097883aa9596ecfe7f188c3ec; WNMCID=xygast.1659122837568.01.0; WEVNSM=1.0.0; WM_NI=CwbjWAFbcIzPX3dsLP%2F52VB%2Bxr572gmqAYwvN9KU5X5f1nRzBYl0SNf%2BV9FTmmYZy%2FoJLADaZS0Q8TrKfNSBNOt0HLB8rRJh9DsvMOT7%2BCGCQLbvlWAcJBJeXb1P8yZ3RHA%3D; WM_NIKE=9ca17ae2e6ffcda170e2e6ee90c65b85ae87b9aa5483ef8ab3d14a939e9a83c459959caeadce47e991fbaee82af0fea7c3b92a81a9ae8bd64b86beadaaf95c9cedac94cf5cedebfeb7c121bcaefbd8b16dafaf8fbaf67e8ee785b6b854f7baff8fd1728287a4d1d246a6f59adac560afb397bbfc25ad9684a2c76b9a8d00b2bb60b295aaafd24a8e91bcd1cb4882e8beb3c964fb9cbd97d04598e9e5a4c6499394ae97ef5d83bd86a3c96f9cbeffb1bb739aed9ea9c437e2a3; WM_TID=AAkRFnl03RdABEBEQFOBWHCPOeMra4IL; playerid=94262567",
         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
     )
+
+    /**
+     * MusicResync: returns up to [limit] search hits with their Netease id, title, artists, album and duration
+     * (ms), so the confidence scorer can rank them and pick by title/artist/duration. Lyrics are fetched
+     * separately via [getSyncedLyrics] for the chosen id. Failure-tolerant: returns an empty list, never throws.
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    suspend fun searchCandidates(query: String, limit: Int = 8): List<NeteaseSong> {
+        if (query.isBlank()) return emptyList()
+        return runCatching {
+            val response = client.get(baseURL + "search/pc") {
+                reqHeaders.forEach { header(it.key, it.value) }
+                parameter("limit", limit)
+                parameter("type", 1)
+                parameter("offset", 0)
+                parameter("s", query)
+            }
+            val body = response.bodyAsText(Charsets.UTF_8)
+            if (response.status.value !in 200..299 || body == "[]" || body.contains("\"songCount\":0"))
+                return@runCatching emptyList()
+            json.decodeFromString<NeteaseResponse>(body).result.songs
+        }.getOrDefault(emptyList())
+    }
 
     /**
      * Searches for synced lyrics using the song name and artist name.
