@@ -97,4 +97,9 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:2.3.4")
     implementation("io.ktor:ktor-client-content-negotiation:2.3.4")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.4")
+
+    // MusicResync: JVM unit tests for the matching engine (pre-scan, filename parsing, confidence scoring)
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("io.ktor:ktor-client-cio:2.3.4")
 }
