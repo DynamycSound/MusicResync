@@ -17,6 +17,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -165,13 +167,22 @@ fun SharedTransitionScope.LyricsFetchScreen(
                         Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        CloudProviderTitle(
-                            selectedProvider = viewModel.userSettingsController.selectedProvider,
-                            onExpandProvidersRequest = { expandedProviders = true }
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(24.dp))
                         CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Text(
+                            text = viewModel.searchStatus?.let {
+                                stringResource(R.string.trying_provider, it.displayName)
+                            } ?: stringResource(R.string.searching),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.this_may_take_a_minute),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
                     }
 
                     is QueryStatus.Success -> SuccessContent(
@@ -212,15 +223,11 @@ fun SharedTransitionScope.LyricsFetchScreen(
                                 context.getString(R.string.lyrics_copied_to_clipboard),
                             )
                         },
-                        onLanguageSelected = { songId, language ->
-                            viewModel.fetchLyricsInLanguage(songId, language)
-                        },
                         openUri = uriHandler::openUri,
                         lyricsFetchState = viewModel.lyricsFetchState,
                         animatedVisibilityScope = animatedVisibilityScope,
                         disableMarquee = viewModel.userSettingsController.disableMarquee,
-                        allowTryingAgain =
-                            viewModel.userSettingsController.selectedProvider != Providers.MUSIXMATCH,
+                        allowTryingAgain = true,
                         selectedProvider = viewModel.activeProvider,
                         onExpandProvidersRequest = { expandedProviders = true },
                     )

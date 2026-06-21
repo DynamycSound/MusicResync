@@ -32,8 +32,8 @@ import pl.lambada.songsync.ui.screens.settings.components.PureBlackThemeSwitch
 import pl.lambada.songsync.ui.screens.settings.components.RomanizationSwitch
 import pl.lambada.songsync.ui.screens.settings.components.SdCardPathSetting
 import pl.lambada.songsync.ui.screens.settings.components.ShowPathSwitch
+import pl.lambada.songsync.ui.screens.settings.components.SpotifySecretsStatus
 import pl.lambada.songsync.ui.screens.settings.components.SupportSection
-import pl.lambada.songsync.ui.screens.settings.components.SyncedLyricsSwitch
 import pl.lambada.songsync.ui.screens.settings.components.TranslationSection
 import pl.lambada.songsync.ui.screens.settings.components.TranslationSwitch
 import pl.lambada.songsync.ui.screens.settings.components.UpdateAvailableDialog
@@ -107,17 +107,12 @@ fun SettingsScreen(
                 )
             }
             item {
-                SyncedLyricsSwitch(
-                    selected = userSettingsController.unsyncedFallbackMusixmatch,
-                    onToggle = { userSettingsController.updateUnsyncedFallbackMusixmatch(it) }
-                )
-            }
-            item {
                 OffsetModeSwitch(
                     selected = userSettingsController.directlyModifyTimestamps,
                     onToggle = { userSettingsController.updateDirectlyModifyTimestamps(it) }
                 )
             }
+            item { SpotifySecretsStatus() }
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                 item { SettingsHeadLabel(label = stringResource(R.string.sd_card)) }
@@ -145,7 +140,7 @@ fun SettingsScreen(
             item { SettingsHeadLabel(label = stringResource(R.string.source_code)) }
             item {
                 ExternalLinkSection(
-                    url = "https://github.com/Lambada10/SongSync",
+                    url = "https://github.com/DynamycSound/MusicResync",
                     uriHandler = uriHandler
                 )
             }

@@ -10,6 +10,7 @@ import pl.lambada.songsync.util.matching.ConfidenceBreakdown
 import pl.lambada.songsync.util.matching.ConfidenceScorer
 import pl.lambada.songsync.util.matching.LocalTrack
 import pl.lambada.songsync.util.matching.MatchStrategy
+import pl.lambada.songsync.util.matching.MatchTier
 import pl.lambada.songsync.util.matching.ProviderResult
 import pl.lambada.songsync.util.matching.QueryCandidate
 import pl.lambada.songsync.util.networking.withRetry
@@ -63,6 +64,7 @@ class SmartLyricsMatcher(
         candidates: List<QueryCandidate>,
         config: MatchConfig = MatchConfig(),
         log: (String) -> Unit = { Log.i(TAG, it) },
+        onAttempt: (provider: Providers) -> Unit = {},
     ): List<ScoredHit> {
         val displayName = listOfNotNull(local.artist, local.title).joinToString(" - ").ifBlank { "<unknown>" }
         log("[match] \"$displayName\"  dur=${local.durationSec?.let { "${it.toInt()}s" } ?: "?"}  candidates=${candidates.size}")
@@ -71,6 +73,7 @@ class SmartLyricsMatcher(
         var best = 0.0
 
         outer@ for (provider in config.providerOrder) {
+            onAttempt(provider)
             for (cand in candidates) {
                 val query = cand.asSearchString()
                 if (query.isBlank()) continue
@@ -132,7 +135,7 @@ class SmartLyricsMatcher(
             } ?: return emptyList()
 
             val pr = ProviderResult(info.songName, info.artistName, null, null, true)
-            val conf = ConfidenceScorer.score(local, pr)
+            val conf = scoreFor(local, pr, cand.strategy)
             // Only spend a lyrics request if the metadata match is at least review-grade.
             val lyrics = if (conf.score >= ConfidenceScorer.REVIEW_THRESHOLD) {
                 runCatching {
@@ -150,6 +153,19 @@ class SmartLyricsMatcher(
         }.onFailure { log("  [${provider.displayName}] failed: ${it.message}") }.getOrDefault(emptyList())
     }
 
+    /**
+     * Scores a hit, then caps remix/version base-song fallbacks at REVIEW. When the only match we could find is
+     * the BASE song for a remix (via the loosened candidate), its lyrics are usually right but the *timing*
+     * differs (a remix changes tempo), so we never silently auto-accept it -- the user verifies and nudges the
+     * offset in the player instead.
+     */
+    private fun scoreFor(local: LocalTrack, pr: ProviderResult, strategy: MatchStrategy): ConfidenceBreakdown {
+        val conf = ConfidenceScorer.score(local, pr)
+        return if (strategy == MatchStrategy.FILENAME_LOOSE && conf.tier == MatchTier.AUTO_ACCEPT)
+            conf.copy(score = 0.80, tier = MatchTier.REVIEW)
+        else conf
+    }
+
     private suspend fun searchLrcLib(
         query: String, local: LocalTrack, cand: QueryCandidate, config: MatchConfig, log: (String) -> Unit
     ): List<ScoredHit> {
@@ -164,7 +180,7 @@ class SmartLyricsMatcher(
             .take(config.maxCandidatesPerProvider)
             .map { r ->
                 val pr = ProviderResult(r.trackName, r.artistName, r.duration, r.albumName, true)
-                ScoredHit(Providers.LRCLIB, cand.strategy, pr, ConfidenceScorer.score(local, pr), r.syncedLyrics, null)
+                ScoredHit(Providers.LRCLIB, cand.strategy, pr, scoreFor(local, pr, cand.strategy), r.syncedLyrics, null)
             }
     }
 
@@ -185,7 +201,7 @@ class SmartLyricsMatcher(
                 album = s.album?.name,
                 hasSyncedLyrics = true,
             )
-            ScoredHit(Providers.NETEASE, cand.strategy, pr, ConfidenceScorer.score(local, pr), null, s.id)
+            ScoredHit(Providers.NETEASE, cand.strategy, pr, scoreFor(local, pr, cand.strategy), null, s.id)
         }
     }
 }

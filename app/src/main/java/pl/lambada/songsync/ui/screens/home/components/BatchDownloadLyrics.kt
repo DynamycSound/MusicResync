@@ -30,6 +30,8 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
     var correctMetadata by rememberSaveable { mutableStateOf(false) }
     var skipExisting by rememberSaveable { mutableStateOf(true) }
     var autoTryProviders by rememberSaveable { mutableStateOf(true) }
+    var saveLrc by rememberSaveable { mutableStateOf(true) }            // default ON (Samsung-compatible)
+    var embedLyrics by rememberSaveable { mutableStateOf(false) }       // default OFF
     val count = successCount + failedCount + noLyricsCount
     val total = songs.size
     val songsWithoutLyrics = songs.count {
@@ -45,6 +47,8 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
                 correctMetadata = correctMetadata,
                 skipExisting = skipExisting,
                 autoTryProviders = autoTryProviders,
+                saveLrc = saveLrc,
+                embedLyrics = embedLyrics,
                 onProgressUpdate = { newSuccessCount, newNoLyricsCount, newFailedCount ->
                     successCount = newSuccessCount
                     noLyricsCount = newNoLyricsCount
@@ -69,8 +73,10 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
                 }
             },
             onDismiss = { uiState = UiState.Cancelled },
-            embedLyrics = viewModel.userSettingsController.embedLyricsIntoFiles,
-            onEmbedLyricsChangeRequest = viewModel.userSettingsController::updateEmbedLyrics,
+            saveLrc = saveLrc,
+            onSaveLrcChangeRequest = { saveLrc = it },
+            embedLyrics = embedLyrics,
+            onEmbedLyricsChangeRequest = { embedLyrics = it },
             correctMetadata = correctMetadata,
             onCorrectMetadataChangeRequest = { correctMetadata = it },
             skipExisting = skipExisting,

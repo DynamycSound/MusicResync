@@ -21,7 +21,7 @@ import pl.lambada.songsync.activities.quicksearch.viewmodel.QuickLyricsSearchVie
 import pl.lambada.songsync.activities.quicksearch.viewmodel.QuickLyricsSearchViewModelFactory
 import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
-import pl.lambada.songsync.ui.theme.SongSyncTheme
+import pl.lambada.songsync.ui.theme.MusicResyncTheme
 import pl.lambada.songsync.util.dataStore
 
 class QuickLyricsSearchActivity : AppCompatActivity() {
@@ -61,7 +61,7 @@ class QuickLyricsSearchActivity : AppCompatActivity() {
         setContent {
             val sheetState = rememberModalBottomSheetState()
             val viewModelState = viewModel.state.collectAsStateWithLifecycle()
-            SongSyncTheme(pureBlack = userSettingsController.pureBlack) {
+            MusicResyncTheme(pureBlack = userSettingsController.pureBlack) {
                 ModalBottomSheet(
                     sheetState = sheetState,
                     properties = ModalBottomSheetDefaults.properties,

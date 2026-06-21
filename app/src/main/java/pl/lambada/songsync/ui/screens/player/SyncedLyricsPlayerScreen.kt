@@ -20,9 +20,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -88,7 +93,9 @@ fun SyncedLyricsPlayerScreen(
     songName: String,
     artists: String,
     onBack: () -> Unit,
+    onFindOnline: () -> Unit = {},
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
     val lrcText = remember(filePath) {
         runCatching {
             File(filePath.substringBeforeLast('.') + ".lrc").takeIf { it.exists() }?.readText()
@@ -155,6 +162,28 @@ fun SyncedLyricsPlayerScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Find lyrics online") },
+                            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                            onClick = { menuExpanded = false; onFindOnline() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Remove current lyrics") },
+                            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                            onClick = {
+                                menuExpanded = false
+                                runCatching { File(filePath.substringBeforeLast('.') + ".lrc").delete() }
+                                runCatching { player.pause() }
+                                onBack()
+                            }
+                        )
                     }
                 }
             )

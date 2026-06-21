@@ -59,6 +59,16 @@ class FilenameParserTest {
     }
 
     @Test
+    fun `dirty tag title containing Artist - Title is split`() {
+        // SnapTube often sets title="$UICIDEBOY$ - Audubon" with an unknown artist; we must still produce a
+        // clean Artist/Title candidate so the correct entry beats a mislabeled upload.
+        val cands = FilenameParser.candidates(
+            tagTitle = "\$UICIDEBOY\$ - Audubon", tagArtist = null, filePath = "/m/x.mp3"
+        )
+        assertTrue(cands.any { it.title.equals("Audubon", true) && it.artist.equals("\$UICIDEBOY\$", true) })
+    }
+
+    @Test
     fun `clean handles underscores and quality tags`() {
         assertEquals("Me Myself I", TextMatch.cleanTitleArtist("Me_ Myself _ I(MP3_320K)"))
     }

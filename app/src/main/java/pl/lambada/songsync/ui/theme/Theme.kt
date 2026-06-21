@@ -31,14 +31,14 @@ private val lightColorScheme = lightColorScheme(
 )
 
 /**
- * Custom SongSync theme that applies the desired color scheme and system UI adjustments.
+ * Custom MusicResync theme that applies the desired color scheme and system UI adjustments.
  *
  * @param darkTheme Whether to use dark theme based on system settings.
  * @param dynamicColor Whether to use dynamic color scheme (available on Android 12+).
  * @param content The content of the theme.
  */
 @Composable
-fun SongSyncTheme(
+fun MusicResyncTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     pureBlack: Boolean = false,
     dynamicColor: Boolean = true,

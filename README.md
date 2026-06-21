@@ -46,15 +46,17 @@ line highlights and auto-scrolls. An **offset slider** lets you fine-tune timing
 ### 🗂️ Organised + one-tap
 - Tabs: **All / Has Lyrics / No Lyrics** with live counts and green/red note indicators per song.
 - A centered **Batch download lyrics** button: one tap fetches lyrics for everything that needs them.
-- Pre-batch options: save as `.lrc` next to the song *or* embed into the file, **correct the metadata**
-  (writes fixed title/artist tags on confident matches), **skip songs that already have lyrics**, and an
-  **Advanced** section with auto-try-other-providers.
+- Pre-batch dialog keeps the two choices that matter up top (**skip songs that already have lyrics**,
+  **save `.lrc` next to the song**); everything else (embed into the file, **correct the metadata**,
+  auto-try other providers) lives under a single **More options** section.
 
 ### 🛡️ Robust providers
-Every request uses **exponential backoff + jitter** (1→2→4→…→30s) with retries, and **graceful fallback**: if
-your selected provider errors or times out (e.g. a Spotify API change, a Musixmatch timeout), MusicResync
+Every request uses **exponential backoff + jitter** (1→2→4→…→30s) with retries and a hard timeout, plus
+**graceful fallback**: if your selected provider errors or times out (e.g. a Spotify API change), MusicResync
 quietly falls through the others instead of throwing an error at you. Providers: **LRCLib** (default, no auth,
-returns duration + lyrics in one request), **Netease**, Apple Music, Musixmatch, Spotify, QQ Music.
+returns duration + lyrics in one request), **Netease**, **Apple Music**, **Spotify**, **QQ Music**.
+Spotify's rotating security keys are fetched from several independent mirrors and cached locally, so a single
+source going down doesn't break it — and none of this blocks app launch.
 
 ---
 
@@ -63,7 +65,8 @@ Grab the APK from the [latest release](../../releases/latest) and sideload it (e
 sources"). Android 5.0+ (minSdk 21). On first launch, grant **All files access** so the app can read your music
 and save `.lrc` files next to it.
 
-> The matching engine works great with no setup. For providers that need API keys, the app guides you in-app.
+> No setup or API keys required — LRCLib (the default) needs no account. The other providers are best-effort
+> fallbacks. MusicResync uses its own package id, so it installs alongside (not over) the original SongSync.
 
 ---
 

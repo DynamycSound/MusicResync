@@ -25,7 +25,6 @@ import pl.lambada.songsync.ui.ScreenHome
 import pl.lambada.songsync.ui.screens.init.components.InitScreenTopBar
 import pl.lambada.songsync.ui.screens.init.components.PermissionItem
 import pl.lambada.songsync.ui.screens.init.components.permissions.AllFilesAccess
-import pl.lambada.songsync.ui.screens.init.components.permissions.NotificationPermission
 import pl.lambada.songsync.ui.screens.init.components.permissions.PostNotifications
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,21 +76,6 @@ fun InitScreen(
                         )
                     }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                    PermissionItem(
-                        title = R.string.notification_access,
-                        description = R.string.notification_access_description,
-                        onClick = { viewModel.notificationAccessClicked = true },
-                        granted = viewModel.notificationAccessPermissionGranted
-                    )
-                    if (viewModel.notificationAccessClicked) {
-                        NotificationPermission(
-                            onGranted = { viewModel.notificationAccessPermissionGranted = true },
-                            onDismiss = { viewModel.notificationAccessClicked = false }
-                        )
-                    }
-                }
-
                 Spacer(modifier = Modifier.weight(1f))
                 Row(
                     modifier = Modifier.padding(16.dp)

@@ -20,6 +20,30 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
+# --- kotlinx.serialization ---
+# Release builds are minified (R8). These keep generated serializers + @Serializable companions so
+# JSON (de)serialization of provider responses and the cached Spotify secrets keeps working.
+-keepattributes RuntimeVisibleAnnotations,AnnotationDefault
+
+-if @kotlinx.serialization.Serializable class **
+-keepclassmembers class <1> {
+    static <1>$Companion Companion;
+}
+-if @kotlinx.serialization.Serializable class ** {
+    static **$* *;
+}
+-keepclassmembers class <2>$<3> {
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-if @kotlinx.serialization.Serializable class ** {
+    public static ** INSTANCE;
+}
+-keepclassmembers class <1> {
+    public static <1> INSTANCE;
+    kotlinx.serialization.KSerializer serializer(...);
+}
+-keepclassmembers class **$$serializer { *; }
+
 # Don't warn about missing classes while running R8. (isMinifyEnabled)
 -dontwarn org.bouncycastle.jsse.BCSSLParameters
 -dontwarn org.bouncycastle.jsse.BCSSLSocket

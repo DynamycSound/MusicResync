@@ -8,7 +8,9 @@
     <string name="correct_metadata_desc">Also fix the title/artist tags on confident matches</string>
     <string name="skip_existing_lyrics">Skip songs that already have lyrics</string>
     <string name="skip_existing_lyrics_desc">Leave already-synced songs untouched</string>
-    <string name="save_mode_desc">Embed lyrics inside the song file. Otherwise a .lrc file is saved next to it.</string>
+    <string name="save_lrc_next_to_song">Save .lrc file next to song</string>
+    <string name="save_lrc_desc">Recommended — works with Samsung Music and most players</string>
+    <string name="embed_lyrics_desc">Also write the lyrics inside the song file\'s tags</string>
     <string name="will_fetch_for_n_songs">This will fetch lyrics for %1$d songs.</string>
     <string name="all_songs_have_lyrics">All songs already have lyrics. Turn off \"Skip existing\" to re-fetch.</string>
     <string name="advanced">Advanced</string>
@@ -16,6 +18,10 @@
     <string name="auto_try_providers_desc">If a song isn\'t found, automatically try the other providers before giving up</string>
     <string name="private_lrc_note">Snaptube downloads: a matching .lrc with a \"_private\" suffix is detected automatically and the suffix removed so players can see it — no fetch needed.</string>
     <string name="confidence_verify">Please verify</string>
+    <string name="searching">Searching…</string>
+    <string name="trying_provider">Trying %1$s…</string>
+    <string name="this_may_take_a_minute">This can take a minute or two — we\'re trying multiple providers to find the best synced match.</string>
+    <string name="remove_current_lyrics">Remove current lyrics</string>
     <string name="auto_best_effort">Auto Best-Effort</string>
     <string name="manual_search">Manual Search</string>
     <string name="batch_download_lyrics">Batch download lyrics</string>
@@ -189,4 +195,15 @@
         <item quantity="one">%1$d song</item>
         <item quantity="other">%1$d songs</item>
     </plurals>
+
+    <string name="more_options">More options</string>
+
+    <!-- Spotify rotating-secret status (Settings) -->
+    <string name="spotify_secrets_title">Spotify security keys</string>
+    <string name="spotify_secrets_desc">Spotify rotates security keys every couple of days. MusicResync updates them automatically; refresh manually if Spotify stops finding songs.</string>
+    <string name="spotify_secrets_bundled">Using bundled keys — Spotify may not work until refreshed.</string>
+    <string name="spotify_secrets_fresh">Up to date · refreshed %1$s ago</string>
+    <string name="spotify_secrets_stale">May be outdated · refreshed %1$s ago. Spotify search may fail.</string>
+    <string name="spotify_secrets_refresh">Refresh</string>
+    <string name="spotify_secrets_refreshing">Refreshing…</string>
 </resources>

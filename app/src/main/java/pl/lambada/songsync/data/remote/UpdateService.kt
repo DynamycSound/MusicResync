@@ -39,17 +39,28 @@ class UpdateService {
      * @return True if the latest release is newer, false otherwise.
      */
     private fun isNewerRelease(context: Context, latestRelease: Release): Boolean {
-        val currentVersion = context
-            .getVersion()
-            .replace(".", "")
-            .toInt()
-        val latestVersion = latestRelease.tagName
-            .replace(".", "")
-            .replace("v", "")
-            .toInt()
-
-        return latestVersion > currentVersion
+        return compareVersions(latestRelease.tagName, context.getVersion()) > 0
     }
+}
+
+/**
+ * Compares two dotted version strings segment-by-segment (e.g. "v1.10.0" vs "1.9.3"). Returns >0 if
+ * [a] is newer than [b], <0 if older, 0 if equal. Fixes the old `"1.10.0".replace(".","").toInt()`
+ * bug, which collapsed 1.10.0 -> 1100 and wrongly ranked it below 1.9.3 -> 193.
+ */
+internal fun compareVersions(a: String, b: String): Int {
+    fun parts(v: String) = v.trim()
+        .removePrefix("v").removePrefix("V")
+        .split('.', '-')
+        .map { seg -> seg.takeWhile { it.isDigit() }.toIntOrNull() ?: 0 }
+
+    val pa = parts(a)
+    val pb = parts(b)
+    for (i in 0 until maxOf(pa.size, pb.size)) {
+        val diff = (pa.getOrElse(i) { 0 }) - (pb.getOrElse(i) { 0 })
+        if (diff != 0) return diff
+    }
+    return 0
 }
 
 /**

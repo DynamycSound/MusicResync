@@ -16,21 +16,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.ViewCompat
 import androidx.navigation.compose.rememberNavController
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
+import pl.lambada.songsync.data.remote.lyrics_providers.spotify.SpotifySecrets
 import pl.lambada.songsync.ui.Navigator
-import pl.lambada.songsync.ui.components.dialogs.NoInternetDialog
-import pl.lambada.songsync.ui.theme.SongSyncTheme
+import pl.lambada.songsync.ui.theme.MusicResyncTheme
 import pl.lambada.songsync.util.dataStore
 import java.io.File
 
@@ -53,27 +48,21 @@ class MainActivity : ComponentActivity() {
 
         val dataStore = this.dataStore
         val userSettingsController = UserSettingsController(dataStore)
+        SpotifySecrets.init(applicationContext)
         checkOrCreateDownloadSubFolder()
         createNotificationChannel()
 
         setContent {
             val navController = rememberNavController()
-            var networkError by rememberSaveable { mutableStateOf<Boolean?>(null) }
-            val context = LocalContext.current
 
             LaunchedEffect(Unit) {
-                context.cacheDir.deleteRecursively()
-                if (networkError == null) lyricsProviderService
-                    .refreshSpotifyToken()
-                    .onFailure { networkError = true }
+                // Warm the Spotify secret cache in the background. Never blocks launch and never
+                // surfaces an error: Spotify is one optional provider and its token is fetched
+                // lazily on first use, not here.
+                SpotifySecrets.refresh()
             }
 
-            SongSyncTheme(pureBlack = userSettingsController.pureBlack) {
-                if (networkError == true) NoInternetDialog(
-                    onConfirm = ::finishAndRemoveTask,
-                    onIgnore = { networkError = false }
-                )
-
+            MusicResyncTheme(pureBlack = userSettingsController.pureBlack) {
                 // check in case user revoked permissions later
                 if (userSettingsController.passedInit)
                     CheckForPermissions(
@@ -126,9 +115,9 @@ private fun checkOrCreateDownloadSubFolder() {
         Environment.DIRECTORY_DOWNLOADS
     )
 
-    val songSyncDir = File(downloadsDir, "SongSync")
+    val musicResyncDir = File(downloadsDir, "MusicResync")
 
-    if (!songSyncDir.exists()) songSyncDir.mkdir()
+    if (!musicResyncDir.exists()) musicResyncDir.mkdir()
 }
 
 private fun Activity.createNotificationChannel() {

@@ -52,6 +52,9 @@ class LyricsFetchViewModel(
     /** The provider that actually produced the shown lyrics (may differ from the chosen one after fallback). */
     var activeProvider by mutableStateOf(userSettingsController.selectedProvider)
 
+    /** Live "which provider are we trying right now" status, shown while searching. */
+    var searchStatus by mutableStateOf<Providers?>(null)
+
     var lyricsFetchState by mutableStateOf<LyricsFetchState>(LyricsFetchState.NotSubmitted)
 
     private suspend fun getSyncedLyrics(title: String, artist: String): String? =
@@ -62,7 +65,6 @@ class LyricsFetchViewModel(
             userSettingsController.includeTranslation,
             userSettingsController.includeRomanization,
             userSettingsController.multiPersonWordByWord,
-            userSettingsController.unsyncedFallbackMusixmatch
         )
 
     private val matcher = SmartLyricsMatcher(providerService = lyricsProviderService)
@@ -86,7 +88,11 @@ class LyricsFetchViewModel(
                 val order = (listOf(userSettingsController.selectedProvider) +
                         Providers.entries.filter { it != userSettingsController.selectedProvider }).distinct()
 
-                val hits = matcher.search(local, candidates, MatchConfig(providerOrder = order))
+                val hits = matcher.search(
+                    local, candidates, MatchConfig(providerOrder = order),
+                    onAttempt = { provider -> searchStatus = provider }
+                )
+                searchStatus = null
                 val best = hits.firstOrNull { it.tier != MatchTier.REJECT } ?: hits.firstOrNull()
                     ?: run {
                         queryState = QueryStatus.Failed(Exception("No provider had matching synced lyrics."))
@@ -105,8 +111,10 @@ class LyricsFetchViewModel(
                 )
                 lyricsFetchState = LyricsFetchState.Success(lyrics)
             } catch (e: UnknownHostException) {
+                searchStatus = null
                 queryState = QueryStatus.NoConnection
             } catch (e: Exception) {
+                searchStatus = null
                 queryState = QueryStatus.Failed(e)
             }
         }
@@ -182,32 +190,6 @@ class LyricsFetchViewModel(
         }
     }
 
-    fun fetchLyricsInLanguage(songId: Long?, language: String) {
-        if (songId == null) return
-        
-        viewModelScope.launch(Dispatchers.IO) {
-            lyricsFetchState = LyricsFetchState.Pending
-            
-            try {
-                val lyrics = lyricsProviderService.getLyricsInLanguage(songId, language)
-                if (lyrics != null) {
-                    lyricsFetchState = LyricsFetchState.Success(lyrics)
-                    
-                    // Update the currentLanguage in the song info
-                    if (queryState is QueryStatus.Success) {
-                        val currentSong = (queryState as QueryStatus.Success).song
-                        queryState = QueryStatus.Success(
-                            currentSong.copy(currentLanguage = language)
-                        )
-                    }
-                } else {
-                    lyricsFetchState = LyricsFetchState.Failed(Exception("No lyrics found for this language"))
-                }
-            } catch (e: Exception) {
-                lyricsFetchState = LyricsFetchState.Failed(e)
-            }
-        }
-    }
 }
 
 /** Reads the audio file's duration in seconds (for confidence scoring); null if it can't be read. */

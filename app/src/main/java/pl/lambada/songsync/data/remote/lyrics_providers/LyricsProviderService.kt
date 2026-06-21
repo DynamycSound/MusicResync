@@ -3,7 +3,6 @@ package pl.lambada.songsync.data.remote.lyrics_providers
 import android.util.Log
 import pl.lambada.songsync.data.remote.lyrics_providers.apple.AppleAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
-import pl.lambada.songsync.data.remote.lyrics_providers.others.MusixmatchAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.NeteaseAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.QQMusicAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.spotify.SpotifyAPI
@@ -40,10 +39,6 @@ class LyricsProviderService {
     
     // Apple Track ID
     private var appleID = 0L
-
-    // Musixmatch Song Info
-    private var musixmatchSongInfo: SongInfo? = null
-    // TODO: Use values from SongInfo object returned by search instead of storing them here
 
     /**
      * Refreshes the access token by sending a request to the Spotify API.
@@ -87,10 +82,6 @@ class LyricsProviderService {
                 Providers.APPLE -> appleAPI.getSongInfo(query, offset).also {
                     appleID = it?.appleID ?: 0
                 } ?: throw NoTrackFoundException()
-
-                Providers.MUSIXMATCH -> MusixmatchAPI().getSongInfo(query, offset).also {
-                    musixmatchSongInfo = it
-                } ?: throw NoTrackFoundException()
             }
         } catch (e: Exception) {
             when (e) {
@@ -113,7 +104,6 @@ class LyricsProviderService {
         includeTranslationNetEase: Boolean = false,
         includeRomanizationNetEase: Boolean = false,
         multiPersonWordByWord: Boolean = false,
-        unsyncedFallbackMusixmatch: Boolean = true
     ): String? {
         return when (provider) {
             Providers.SPOTIFY -> SpotifyLyricsAPI().getSyncedLyrics(spotifyUrl)
@@ -127,15 +117,6 @@ class LyricsProviderService {
             Providers.APPLE -> appleAPI.getSyncedLyrics(
                 appleID, multiPersonWordByWord
             )
-
-            Providers.MUSIXMATCH -> MusixmatchAPI().getLyrics(
-                musixmatchSongInfo,
-                unsyncedFallbackMusixmatch
-            )
         }
-    }
-
-    suspend fun getLyricsInLanguage(songId: Long, language: String): String? {
-        return MusixmatchAPI().getLyricsInLanguage(songId, language)
     }
 }

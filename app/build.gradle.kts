@@ -11,12 +11,12 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "pl.lambada.songsync"
+        applicationId = "com.dynamycsound.musicresync"
         minSdk = 21
         //noinspection OldTargetApi
         targetSdk = 35
-        versionCode = 433
-        versionName = "4.3.3"
+        versionCode = 110
+        versionName = "1.1.0"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -57,9 +57,6 @@ android {
     buildFeatures {
         compose = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -68,8 +65,6 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.7.0")
-    implementation("androidx.compose.ui:ui:1.0.5")
     implementation(libs.core.ktx)
     implementation(libs.lifecycle.runtime.ktx)
     implementation(libs.activity.compose)

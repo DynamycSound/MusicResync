@@ -85,7 +85,16 @@ fun Navigator(
                     filePath = args.filePath,
                     songName = args.songName,
                     artists = args.artists,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onFindOnline = {
+                        navController.navigate(
+                            LyricsFetchScreen(
+                                songName = args.songName,
+                                artists = args.artists,
+                                filePath = args.filePath
+                            )
+                        )
+                    }
                 )
             }
         }

@@ -298,40 +298,6 @@ fun HomeScreenLoaded(
                 )
             }
 
-            item {
-                if (viewModel.playingSongTitle.isNotEmpty()) {
-                    Text(stringResource(id = R.string.now_playing_song))
-                    SongItem(
-                        filePath = viewModel.playingSongFilePath,
-                        selected = false,
-                        quickSelect = false,
-                        onSelectionChanged = {},
-                        onNavigateToSongRequest = {
-                            navController.navigate(
-                                LyricsFetchScreen(
-                                    songName = viewModel.playingSongTitle,
-                                    artists = viewModel.playingSongArtist,
-                                    coverUri = viewModel.playingSongAlbumArt.toString(),
-                                    filePath = viewModel.playingSongFilePath
-                                )
-                            )
-                        },
-                        song = Song(
-                            title = viewModel.playingSongTitle,
-                            artist = viewModel.playingSongArtist,
-                            imgUri = viewModel.playingSongAlbumArt,
-                            filePath = viewModel.playingSongFilePath
-                        ),
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        disableMarquee = viewModel.userSettingsController.disableMarquee,
-                        showPath = viewModel.userSettingsController.showPath
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    HorizontalDivider()
-                }
-            }
-
             val tabSongs = viewModel.tabFilteredSongs
             items(tabSongs.size) { index ->
                 val song = tabSongs[index]

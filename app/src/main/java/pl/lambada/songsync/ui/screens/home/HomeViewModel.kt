@@ -1,11 +1,7 @@
 package pl.lambada.songsync.ui.screens.home
 
-import android.content.ComponentName
 import android.content.ContentUris
 import android.content.Context
-import android.graphics.Bitmap
-import android.media.MediaMetadata
-import android.media.session.MediaSessionManager
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
@@ -34,15 +30,12 @@ import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.domain.model.SortOrders
 import pl.lambada.songsync.domain.model.SortValues
-import pl.lambada.songsync.services.NotificationListener
 import pl.lambada.songsync.util.downloadLyrics
 import pl.lambada.songsync.util.ext.toLrcFile
 import pl.lambada.songsync.util.matching.LrcPrescan
 import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.matching.PrescanResult
 import pl.lambada.songsync.util.matching.SongMatchInfo
-import java.io.File
-import java.util.UUID
 
 /**
  * ViewModel class for the main functionality of the app.
@@ -61,16 +54,13 @@ class HomeViewModel(
     /** Currently selected tab: All / Has Lyrics / No Lyrics. */
     var selectedTab by mutableStateOf(LyricsTab.ALL)
 
-    /** Resolved lyric state for a song: live status if matched this session, else the on-disk .lrc check. */
-    fun lyricStateFor(song: Song): LyricState {
-        songMatchStatus[song.filePath]?.let { return it.state }
-        val lrc = song.filePath.toLrcFile()
-        return when {
-            lrc?.exists() != true -> LyricState.NO_LYRICS
-            LrcPrescan.isSyncedLrc(lrc) -> LyricState.HAS_LYRICS
-            else -> LyricState.UNSYNCED
-        }
-    }
+    /**
+     * Resolved lyric state for a song. Pure map read — NO file I/O — so it's safe to call from composition for
+     * every row/badge without jank. The map is seeded once on load (off the main thread, from the pre-scan
+     * results) and updated as the batch runs.
+     */
+    fun lyricStateFor(song: Song): LyricState =
+        songMatchStatus[song.filePath]?.state ?: LyricState.NO_LYRICS
 
     private fun songHasLyrics(song: Song): Boolean = when (lyricStateFor(song)) {
         LyricState.HAS_LYRICS, LyricState.SYNCED, LyricState.REVIEW, LyricState.UNSYNCED -> true
@@ -94,11 +84,6 @@ class HomeViewModel(
     var isRefreshing by mutableStateOf(false)
 
     var searchQuery by mutableStateOf("")
-
-    var playingSongTitle by mutableStateOf("")
-    var playingSongArtist by mutableStateOf("")
-    var playingSongAlbumArt by mutableStateOf<Uri?>(null)
-    var playingSongFilePath by mutableStateOf("")
 
     // Filter settings
     private var cachedFolders: MutableList<String>? = null
@@ -224,11 +209,24 @@ class HomeViewModel(
                 val renamed = results.values.count { r -> r == PrescanResult.RENAMED_FROM_PRIVATE }
                 val present = results.values.count { r -> r != PrescanResult.NONE }
                 Log.i("MusicResync", "[prescan] ${songs.size} songs -> $present already have lyrics ($renamed renamed from _private)")
+
+                // Seed lyric state here (off the main thread) so composition never has to touch the disk.
+                // This runs only on first load / refresh (cachedSongs was null), so re-seeding from disk is the
+                // source of truth -- it also reflects lyrics the user removed since the last load.
+                songMatchStatus.clear()
+                results.forEach { (path, r) ->
+                    songMatchStatus[path] = SongMatchInfo(
+                        when (r) {
+                            PrescanResult.ALREADY_SYNCED, PrescanResult.RENAMED_FROM_PRIVATE -> LyricState.HAS_LYRICS
+                            PrescanResult.ALREADY_PRESENT_UNSYNCED -> LyricState.UNSYNCED
+                            PrescanResult.NONE -> LyricState.NO_LYRICS
+                        }
+                    )
+                }
             }
 
             cachedSongs = songs
             viewModelScope.launch { filterSongs() }
-            viewModelScope.launch { updatePlayingSongInfo(context) }
             cachedSongs!!
         }
     }
@@ -360,7 +358,6 @@ class HomeViewModel(
                 includeTranslationNetEase = userSettingsController.includeTranslation,
                 includeRomanizationNetEase = userSettingsController.includeRomanization,
                 multiPersonWordByWord = userSettingsController.multiPersonWordByWord,
-                unsyncedFallbackMusixmatch = userSettingsController.unsyncedFallbackMusixmatch
             )
         } catch (e: Exception) {
             null
@@ -385,6 +382,8 @@ class HomeViewModel(
         correctMetadata: Boolean = false,
         skipExisting: Boolean = true,
         autoTryProviders: Boolean = true,
+        saveLrc: Boolean = true,
+        embedLyrics: Boolean = false,
         onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int) -> Unit,
         onDownloadComplete: () -> Unit,
         onRateLimitReached: () -> Unit
@@ -396,6 +395,8 @@ class HomeViewModel(
             correctMetadata = correctMetadata,
             skipExisting = skipExisting,
             autoTryProviders = autoTryProviders,
+            saveLrc = saveLrc,
+            embedLyrics = embedLyrics,
             onProgressUpdate = onProgressUpdate,
             onSongResult = { filePath, info -> songMatchStatus[filePath] = info },
             onDownloadComplete = onDownloadComplete,
@@ -403,37 +404,6 @@ class HomeViewModel(
         )
     }
 
-    fun updatePlayingSongInfo(context: Context) = runCatching {
-        val msm = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
-        val controllers = msm.getActiveSessions(ComponentName(context, NotificationListener::class.java))
-        val metadata = controllers[0].metadata
-        playingSongTitle = metadata!!.getString(MediaMetadata.METADATA_KEY_TITLE) ?: context.getString(R.string.unknown)
-        playingSongArtist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: context.getString(R.string.unknown)
-        playingSongFilePath =  try {
-            allSongs!!.filter {
-                (it.title == playingSongTitle || (it.title == null && playingSongTitle == context.getString(R.string.unknown)))
-                &&
-                (it.artist == playingSongArtist || (it.artist == null && playingSongArtist == context.getString(R.string.unknown)))
-            }[0].filePath!! + ".nowplaying" // shared transition uses path as key, add to avoid breaking stuff
-        } catch (e: IndexOutOfBoundsException) {
-            ""
-        }
-        playingSongAlbumArt = try {
-            metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)!!.let {
-                // not same name of files because img won't update, cache dir cleared at app start
-                val file = File(context.cacheDir, "${UUID.randomUUID()}.jpg")
-                it.compress(Bitmap.CompressFormat.JPEG, 100, file.outputStream())
-                Uri.parse(file.absolutePath)
-            }
-        } catch (e: NullPointerException) {
-            null
-        }
-    }.onFailure {
-        playingSongTitle = ""
-        playingSongArtist = ""
-        playingSongFilePath = ""
-        playingSongAlbumArt = null
-    }
 }
 
 /** The three top-level tabs the song list can be filtered by. */

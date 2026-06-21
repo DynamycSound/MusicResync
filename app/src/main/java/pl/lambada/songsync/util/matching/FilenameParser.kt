@@ -88,42 +88,46 @@ object FilenameParser {
             out.putIfAbsent(key, c)
         }
 
+        // Splits a "Artist - Title" string into the family of candidates (artist-title, primary-artist,
+        // remix-loosened, reversed, plain title). Used for BOTH the filename and a tag-title that looks like
+        // "Artist - Title" -- the latter fixes dirty tags such as title="$UICIDEBOY$ - Audubon" / artist=Unknown,
+        // which otherwise only matched a mislabeled upload that copied the whole string into its track name.
+        fun addDashCandidates(raw: String) {
+            val cleaned = TextMatch.cleanTitleArtist(raw)
+            val dashParts = cleaned.split(Regex("""\s+-\s+"""), limit = 2).map { it.trim() }.filter { it.isNotBlank() }
+            if (dashParts.size == 2) {
+                val (artistPart, titlePart) = dashParts[0] to dashParts[1]
+                add(candidate(titlePart, artistPart, MatchStrategy.FILENAME_ARTIST_TITLE)) // exact (keeps remix tag)
+
+                val primary = primaryArtist(artistPart)
+                if (!primary.equals(artistPart, ignoreCase = true))
+                    add(candidate(titlePart, primary, MatchStrategy.FILENAME_PRIMARY_ARTIST))
+
+                // Loosened: drop "(... Remix)/(... Version)" so the BASE track can be found as a fallback.
+                val loose = loosenTitle(titlePart)
+                if (!loose.equals(titlePart, ignoreCase = true) && loose.isNotBlank())
+                    add(candidate(loose, primary, MatchStrategy.FILENAME_LOOSE))
+
+                add(candidate(artistPart, titlePart, MatchStrategy.FILENAME_TITLE_ARTIST)) // reversed
+            }
+            add(candidate(cleaned, null, MatchStrategy.FILENAME_TITLE_ONLY))
+            val loosePlain = loosenTitle(cleaned)
+            if (!loosePlain.equals(cleaned, ignoreCase = true) && loosePlain.isNotBlank())
+                add(candidate(loosePlain, null, MatchStrategy.FILENAME_TITLE_ONLY))
+        }
+
         // 1) Trust tags first when they look real.
         val title = tagTitle?.takeIf { it.isNotBlank() && it != "<unknown>" }
         val artist = tagArtist?.takeIf { it.isNotBlank() && it != "<unknown>" }
-        if (title != null) add(candidate(title, artist, MatchStrategy.TAGS))
+        if (title != null) {
+            add(candidate(title, artist, MatchStrategy.TAGS))
+            // If the tag title itself is "Artist - Title", split it too.
+            if (title.contains(Regex("""\s+-\s+"""))) addDashCandidates(title)
+        }
 
         // 2) Parse the filename several ways.
-        val base = filePath?.let { File(it).nameWithoutExtension } ?: return out.values.toList()
-        val cleaned = TextMatch.cleanTitleArtist(base)
-
-        // Split on the first " - " (most SnapTube names are "Artist - Title").
-        val dashParts = cleaned.split(Regex("""\s+-\s+"""), limit = 2).map { it.trim() }.filter { it.isNotBlank() }
-        if (dashParts.size == 2) {
-            val (artistPart, titlePart) = dashParts[0] to dashParts[1]
-            add(candidate(titlePart, artistPart, MatchStrategy.FILENAME_ARTIST_TITLE)) // Artist - Title
-
-            // Primary-artist variant: collabs like "Coby X Teodora" or "$uicideboy$ x Travis Barker" search
-            // far better against the lead act alone.
-            val primary = primaryArtist(artistPart)
-            if (!primary.equals(artistPart, ignoreCase = true))
-                add(candidate(titlePart, primary, MatchStrategy.FILENAME_PRIMARY_ARTIST))
-
-            // Loosened variant: drop "(... Remix)" / "(... Version)" so the base track can be found.
-            val loose = loosenTitle(titlePart)
-            if (!loose.equals(titlePart, ignoreCase = true) && loose.isNotBlank())
-                add(candidate(loose, primary, MatchStrategy.FILENAME_LOOSE))
-
-            add(candidate(artistPart, titlePart, MatchStrategy.FILENAME_TITLE_ARTIST)) // reversed
-        }
-
-        // 3) Title-only fallbacks (no artist) — for merged names ("G-Eazy I Mean It"), wrong artist spelling,
-        //    or tag-less files. Duration matching on-device disambiguates the broad result set.
-        add(candidate(cleaned, null, MatchStrategy.FILENAME_TITLE_ONLY))
-        if (dashParts.size == 2) {
-            val loosePlainTitle = loosenTitle(dashParts[1])
-            add(candidate(loosePlainTitle.ifBlank { dashParts[1] }, null, MatchStrategy.FILENAME_TITLE_ONLY))
-        }
+        val base = filePath?.let { File(it).nameWithoutExtension }
+        if (base != null) addDashCandidates(base)
 
         return out.values.toList()
     }

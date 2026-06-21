@@ -15,7 +15,7 @@ object GithubAPI {
      * @return The latest release version.
      */
     suspend fun getLatestRelease(): Release {
-        val response = client.get(BASE_URL + "repos/Lambada10/SongSync/releases/latest")
+        val response = client.get(BASE_URL + "repos/DynamycSound/MusicResync/releases/latest")
         val responseBody = response.bodyAsText(Charsets.UTF_8)
 
         return json.decodeFromString<Release>(responseBody)

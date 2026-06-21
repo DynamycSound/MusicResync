@@ -36,6 +36,8 @@ fun BatchDownloadWarningDialog(
     songsToProcess: Int,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    saveLrc: Boolean,
+    onSaveLrcChangeRequest: (Boolean) -> Unit,
     embedLyrics: Boolean,
     onEmbedLyricsChangeRequest: (Boolean) -> Unit,
     correctMetadata: Boolean,
@@ -59,7 +61,8 @@ fun BatchDownloadWarningDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Clean, borderless option rows.
+                // The two choices that matter to almost everyone stay up top; everything else is tucked
+                // away so a first-time user can just tap "Yes".
                 SwitchItem(
                     label = stringResource(R.string.skip_existing_lyrics),
                     description = stringResource(R.string.skip_existing_lyrics_desc),
@@ -69,22 +72,14 @@ fun BatchDownloadWarningDialog(
                 ) { onSkipExistingChangeRequest(!skipExisting) }
 
                 SwitchItem(
-                    label = stringResource(R.string.embed_lyrics_in_file),
-                    description = stringResource(R.string.save_mode_desc),
-                    selected = embedLyrics,
+                    label = stringResource(R.string.save_lrc_next_to_song),
+                    description = stringResource(R.string.save_lrc_desc),
+                    selected = saveLrc,
                     modifier = Modifier,
                     innerPaddingValues = rowPadding,
-                ) { onEmbedLyricsChangeRequest(!embedLyrics) }
+                ) { onSaveLrcChangeRequest(!saveLrc) }
 
-                SwitchItem(
-                    label = stringResource(R.string.correct_metadata),
-                    description = stringResource(R.string.correct_metadata_desc),
-                    selected = correctMetadata,
-                    modifier = Modifier,
-                    innerPaddingValues = rowPadding,
-                ) { onCorrectMetadataChangeRequest(!correctMetadata) }
-
-                // Advanced (collapsed by default)
+                // More options (collapsed by default)
                 Row(
                     modifier = Modifier
                         .clickable { advancedExpanded = !advancedExpanded }
@@ -92,7 +87,7 @@ fun BatchDownloadWarningDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = stringResource(R.string.advanced),
+                        text = stringResource(R.string.more_options),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f)
@@ -105,6 +100,22 @@ fun BatchDownloadWarningDialog(
                 }
                 AnimatedVisibility(visible = advancedExpanded) {
                     Column {
+                        SwitchItem(
+                            label = stringResource(R.string.embed_lyrics_in_file),
+                            description = stringResource(R.string.embed_lyrics_desc),
+                            selected = embedLyrics,
+                            modifier = Modifier,
+                            innerPaddingValues = rowPadding,
+                        ) { onEmbedLyricsChangeRequest(!embedLyrics) }
+
+                        SwitchItem(
+                            label = stringResource(R.string.correct_metadata),
+                            description = stringResource(R.string.correct_metadata_desc),
+                            selected = correctMetadata,
+                            modifier = Modifier,
+                            innerPaddingValues = rowPadding,
+                        ) { onCorrectMetadataChangeRequest(!correctMetadata) }
+
                         SwitchItem(
                             label = stringResource(R.string.auto_try_providers),
                             description = stringResource(R.string.auto_try_providers_desc),

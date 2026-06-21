@@ -2,20 +2,22 @@ package pl.lambada.songsync.util.networking
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
 object Ktor {
     val client = HttpClient(CIO.create {
-        // Here goes all the Engine config
-        // TODO: Add proxy support
-        // proxy = ProxyConfig(
-        //     type = Proxy.Type.SOCKS,
-        //     sa = java.net.InetSocketAddress(3030)
-        // )
+        requestTimeout = 20_000
     }) {
-        // In case of adding plugins, add them here
+        // Bound every request so a slow/down provider (e.g. Spotify) can't make the search hang forever -- it
+        // fails fast, the retry/backoff handles transient blips, and the matcher moves on to the next provider.
+        install(HttpTimeout) {
+            connectTimeoutMillis = 10_000
+            requestTimeoutMillis = 20_000
+            socketTimeoutMillis = 20_000
+        }
         install(ContentNegotiation) {
             json(Json {
                 ignoreUnknownKeys = true

@@ -21,8 +21,11 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         private set
 
     var selectedProvider by mutableStateOf(
+        // Default to LRCLib (no keys, reliable, returns synced+plain+duration). Null-safe: a value
+        // stored for a since-removed provider (e.g. Musixmatch) falls back to LRCLib instead of crashing.
         Providers.entries
-            .find { it.displayName == dataStore.get(selectedProviderKey, Providers.SPOTIFY.displayName) }!!
+            .find { it.displayName == dataStore.get(selectedProviderKey, Providers.LRCLIB.displayName) }
+            ?: Providers.LRCLIB
     )
         private set
 
@@ -41,9 +44,6 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         private set
 
     var multiPersonWordByWord by mutableStateOf(dataStore.get(multiPersonWordByWordKey, true))
-        private set
-
-    var unsyncedFallbackMusixmatch by mutableStateOf(dataStore.get(unsyncedFallbackMusixmatchKey, true))
         private set
 
     var pureBlack by mutableStateOf(dataStore.get(pureBlackKey, false))
@@ -113,11 +113,6 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         multiPersonWordByWord = to
     }
 
-    fun updateUnsyncedFallbackMusixmatch(to: Boolean) {
-        dataStore.set(unsyncedFallbackMusixmatchKey, to)
-        unsyncedFallbackMusixmatch = to
-    }
-
     fun updateDisableMarquee(to: Boolean) {
         dataStore.set(disableMarqueeKey, to)
         disableMarquee = to
@@ -162,7 +157,6 @@ private val hideLyricsKey = booleanPreferencesKey("hide_lyrics")
 private val includeTranslationKey = booleanPreferencesKey("include_translation")
 private val includeRomanizationKey = booleanPreferencesKey("include_romanization")
 private val multiPersonWordByWordKey = booleanPreferencesKey("multi_person_word_by_word")
-private val unsyncedFallbackMusixmatchKey = booleanPreferencesKey("unsynced_lyrics_fallback")
 private val disableMarqueeKey = booleanPreferencesKey("marquee_disable")
 private val pureBlackKey = booleanPreferencesKey("pure_black")
 private val sdCardPathKey = stringPreferencesKey("sd_card_path")

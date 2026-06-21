@@ -2,6 +2,8 @@ package pl.lambada.songsync.util.networking
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import pl.lambada.songsync.util.EmptyQueryException
+import pl.lambada.songsync.util.NoTrackFoundException
 import kotlin.math.min
 import kotlin.random.Random
 
@@ -27,7 +29,10 @@ suspend fun <T> withRetry(
             throw c
         } catch (e: Throwable) {
             attempt++
-            if (attempt >= maxAttempts) throw e
+            // "No track found" / "empty query" are definitive answers, not transient failures -- retrying
+            // them just wastes seconds per provider and makes the search feel like it hangs.
+            val nonRetryable = e is NoTrackFoundException || e is EmptyQueryException
+            if (nonRetryable || attempt >= maxAttempts) throw e
             val exp = baseDelayMs shl (attempt - 1)            // base * 2^(attempt-1)
             val delayMs = min(exp + Random.nextLong(0, baseDelayMs.coerceAtLeast(1)), maxDelayMs)
             onRetry(attempt, delayMs, e)

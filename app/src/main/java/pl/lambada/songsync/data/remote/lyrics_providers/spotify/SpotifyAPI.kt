@@ -54,36 +54,30 @@ class SpotifyAPI {
     private var tokenTime: Long = 0
 
     /**
-     * Fetches secret data from GitHub and initializes TOTP
+     * Initializes TOTP from the resilient secret store (multi-mirror fetch + DataStore cache +
+     * bundled fallback). Never blocks on a single source and always yields a usable secret.
      */
     private suspend fun initializeTOTP() {
         if (totpGenerator != null) return
 
-        try {
-            val response = client.get("https://raw.githubusercontent.com/xyloflake/spot-secrets-go/refs/heads/main/secrets/secretBytes.json")
-            val responseBody = response.bodyAsText(Charsets.UTF_8)
-            val secretDataList = json.decodeFromString<List<SecretData>>(responseBody)
-            
-            val lastSecretData = secretDataList.last()
-            
-            totpSecret = toSecret(lastSecretData.secret)
-            totpVer = lastSecretData.version
-            
-            totpGenerator = TimeBasedOneTimePasswordGenerator(
-                totpSecret!!,
-                TimeBasedOneTimePasswordConfig(
-                    30L,
-                    TimeUnit.SECONDS,
-                    6,
-                    HmacAlgorithm.SHA1
-                )
+        // No-op when the cache is fresh; never throws even if every mirror is down.
+        SpotifySecrets.refresh()
+        val lastSecretData = SpotifySecrets.current().last()
+
+        totpSecret = toSecret(lastSecretData.secret)
+        totpVer = lastSecretData.version
+
+        totpGenerator = TimeBasedOneTimePasswordGenerator(
+            totpSecret!!,
+            TimeBasedOneTimePasswordConfig(
+                30L,
+                TimeUnit.SECONDS,
+                6,
+                HmacAlgorithm.SHA1
             )
-            
-            Log.d("SpotifyAPI", "TOTP initialized with version: $totpVer")
-        } catch (e: Exception) {
-            Log.e("SpotifyAPI", "Failed to initialize TOTP", e)
-            throw e
-        }
+        )
+
+        Log.d("SpotifyAPI", "TOTP initialized with version: $totpVer")
     }
 
     /**
@@ -187,6 +181,8 @@ class SpotifyAPI {
         val response = client.get(
            "$baseURL?operationName=searchTracks&variables=$encodedVariables&extensions=$encodedExtensions"
         ) {
+           // Spotify blocks the partner endpoint without the same browser headers the token call uses.
+           reqHeaders.forEach { (key, value) -> header(key, value) }
            headers.append("Authorization", "Bearer $spotifyToken")
         }
         val responseBody = response.bodyAsText(Charsets.UTF_8)

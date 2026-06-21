@@ -18,3 +18,8 @@ local.properties
 # MusicResync: local test music corpus (large, not part of source)
 /snaptube/
 
+
+# Local release signing key — never commit
+release-keystore.jks
+# Built release APKs
+*.apk

@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.kyant.taglib.TagLib
 import pl.lambada.songsync.R
+import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
 import pl.lambada.songsync.data.remote.lyrics_providers.MatchConfig
 import pl.lambada.songsync.data.remote.lyrics_providers.SmartLyricsMatcher
 import pl.lambada.songsync.domain.model.Song
@@ -51,7 +52,7 @@ fun newLyricsFilePath(filePath: String?, song: SongInfo): File {
     return if (filePath == null || filePath.isEmpty()) {
         File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "SongSync/${song.songName} - ${song.artistName}.lrc"
+            "MusicResync/${song.songName} - ${song.artistName}.lrc"
         ).sanitize()
     } else {
         filePath.toLrcFile()!!
@@ -208,7 +209,6 @@ enum class Providers(val displayName: String, val hasWordByWord: Boolean) {
     APPLE("Apple Music", true),
     LRCLIB("LRCLib", false),
     SPOTIFY("Spotify", false),
-    MUSIXMATCH("Musixmatch", false),
     QQMUSIC("QQ Music", true),
     NETEASE("Netease", false) { val inf = 0 },
 }
@@ -221,6 +221,8 @@ suspend fun downloadLyrics(
     correctMetadata: Boolean = false,
     skipExisting: Boolean = true,
     autoTryProviders: Boolean = true,
+    saveLrc: Boolean = true,
+    embedLyrics: Boolean = false,
     onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int) -> Unit,
     onSongResult: (filePath: String, info: SongMatchInfo) -> Unit = { _, _ -> },
     onDownloadComplete: () -> Unit,
@@ -231,10 +233,13 @@ suspend fun downloadLyrics(
     var failedCount = 0
     var consecutiveFailures = 0
 
-    val matcher = SmartLyricsMatcher()
-    // Auto-try ON: fall through LRCLib -> Netease. OFF: LRCLib only.
+    // Auto-try ON: fall through every provider (same reach as the single-song search), so a song that only has
+    // synced lyrics on, say, Apple or Netease is still found in batch. OFF: LRCLib only (fastest).
+    val matcher = SmartLyricsMatcher(providerService = LyricsProviderService())
     val config = MatchConfig(
-        providerOrder = if (autoTryProviders) listOf(Providers.LRCLIB, Providers.NETEASE) else listOf(Providers.LRCLIB)
+        providerOrder = if (autoTryProviders)
+            listOf(Providers.LRCLIB, Providers.NETEASE, Providers.APPLE, Providers.SPOTIFY, Providers.QQMUSIC)
+        else listOf(Providers.LRCLIB)
     )
 
     songs.forEach { song ->
@@ -250,7 +255,7 @@ suspend fun downloadLyrics(
             return@forEach
         }
 
-        val info = matchAndSaveSong(song, viewModel, context, matcher, config, correctMetadata, overwriteExisting = !skipExisting)
+        val info = matchAndSaveSong(song, viewModel, context, matcher, config, correctMetadata, overwriteExisting = !skipExisting, saveLrc = saveLrc, embedLyrics = embedLyrics)
 
         when (info.state) {
             LyricState.SYNCED, LyricState.REVIEW, LyricState.HAS_LYRICS, LyricState.UNSYNCED -> {
@@ -285,6 +290,8 @@ suspend fun matchAndSaveSong(
     config: MatchConfig,
     correctMetadata: Boolean = false,
     overwriteExisting: Boolean = false,
+    saveLrc: Boolean = true,
+    embedLyrics: Boolean = false,
 ): SongMatchInfo {
     val lrcFile = song.filePath.toLrcFile()
 
@@ -329,10 +336,12 @@ suspend fun matchAndSaveSong(
     val lrcContent = formatLyrics(songInfo, lyrics, context, viewModel.userSettingsController.directlyModifyTimestamps)
 
     runCatching {
-        if (viewModel.userSettingsController.embedLyricsIntoFiles) {
-            embedLyricsInFile(context, song.filePath ?: error("File path is null"), lrcContent)
-        } else {
+        // Independent choices: write a sidecar .lrc and/or embed into the file. Default saves the .lrc.
+        if (saveLrc || !embedLyrics) {
             writeLyricsToFile(lrcFile, lrcContent, context, song, viewModel.userSettingsController.sdCardPath)
+        }
+        if (embedLyrics) {
+            embedLyricsInFile(context, song.filePath ?: error("File path is null"), lrcContent)
         }
     }.getOrElse {
         Log.e("MusicResync", "saving .lrc failed for ${song.filePath}: ${it.message}")
