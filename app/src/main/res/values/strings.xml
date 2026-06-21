@@ -1,5 +1,14 @@
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name" translatable="false">SongSync</string>
+    <string name="app_name" translatable="false">MusicResync</string>
+    <!-- MusicResync tabs and confidence UI -->
+    <string name="tab_all">All</string>
+    <string name="tab_has_lyrics">Has Lyrics</string>
+    <string name="tab_no_lyrics">No Lyrics</string>
+    <string name="correct_metadata">Correct the metadata</string>
+    <string name="correct_metadata_desc">Also write corrected title/artist tags to high-confidence matches</string>
+    <string name="confidence_verify">Please verify</string>
+    <string name="auto_best_effort">Auto Best-Effort</string>
+    <string name="manual_search">Manual Search</string>
     <string name="batch_download_lyrics">Batch download lyrics</string>
     <string name="get_lyrics">Get lyrics</string>
     <string name="try_again">Try again</string>

@@ -13,11 +13,19 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.kyant.taglib.TagLib
 import pl.lambada.songsync.R
+import pl.lambada.songsync.data.remote.lyrics_providers.MatchConfig
+import pl.lambada.songsync.data.remote.lyrics_providers.SmartLyricsMatcher
 import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.ui.screens.home.HomeViewModel
 import pl.lambada.songsync.util.ext.sanitize
 import pl.lambada.songsync.util.ext.toLrcFile
+import pl.lambada.songsync.util.matching.FilenameParser
+import pl.lambada.songsync.util.matching.LocalTrack
+import pl.lambada.songsync.util.matching.LrcPrescan
+import pl.lambada.songsync.util.matching.LyricState
+import pl.lambada.songsync.util.matching.MatchTier
+import pl.lambada.songsync.util.matching.SongMatchInfo
 import java.io.File
 import java.io.FileNotFoundException
 
@@ -189,97 +197,111 @@ suspend fun downloadLyrics(
     viewModel: HomeViewModel,
     context: Context,
     onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int) -> Unit,
+    onSongResult: (filePath: String, info: SongMatchInfo) -> Unit = { _, _ -> },
     onDownloadComplete: () -> Unit,
     onRateLimitReached: () -> Unit,
 ) {
     var successCount = 0
     var noLyricsCount = 0
     var failedCount = 0
-    var consecutiveNotFound = 0
+    var consecutiveFailures = 0
+
+    val matcher = SmartLyricsMatcher()
+    val config = MatchConfig() // tunables (delay/retries/provider order) wired to Settings in a later step
 
     songs.forEach { song ->
-        downloadLyricsForSong(
-            song,
-            viewModel,
-            context,
-            onFailedSongInfoResponse = {
-                failedCount++
-                consecutiveNotFound++
-                if (consecutiveNotFound >= 5) onRateLimitReached()
-            },
-            onSuccessfulSongInfoResponse = { consecutiveNotFound = 0 },
-            onFailedLyricsResponse = {
-                if (it is NullPointerException || it is FileNotFoundException)
-                    noLyricsCount++
-                else {
-                    failedCount++
-                    consecutiveNotFound++
-                }
-            },
-            onLyricsSaved = { successCount++ }
-        )
+        val path = song.filePath
+        if (path != null) onSongResult(path, SongMatchInfo(LyricState.FETCHING))
 
+        val info = matchAndSaveSong(song, viewModel, context, matcher, config)
+
+        when (info.state) {
+            LyricState.SYNCED, LyricState.REVIEW, LyricState.HAS_LYRICS, LyricState.UNSYNCED -> {
+                successCount++; consecutiveFailures = 0
+            }
+            LyricState.NO_LYRICS -> { noLyricsCount++; consecutiveFailures = 0 }
+            LyricState.FAILED -> {
+                failedCount++; consecutiveFailures++
+                if (consecutiveFailures >= 5) onRateLimitReached()
+            }
+            LyricState.FETCHING -> { /* not a terminal state */ }
+        }
+
+        if (path != null) onSongResult(path, info)
         onProgressUpdate(successCount, noLyricsCount, failedCount)
     }
 
     onDownloadComplete()
 }
 
-// only for retrieval, processing, and saving data
-private suspend fun downloadLyricsForSong(
+/**
+ * MusicResync core: matches one song with the [SmartLyricsMatcher] (filename-aware candidate ladder +
+ * confidence scoring + duration tiebreak) and saves a Samsung-compatible .lrc next to the audio. Never throws —
+ * returns a [SongMatchInfo] describing the outcome so the UI can colour the row and route low-confidence songs
+ * to the manual queue.
+ */
+suspend fun matchAndSaveSong(
     song: Song,
     viewModel: HomeViewModel,
     context: Context,
-    onFailedSongInfoResponse: (Throwable) -> Unit,
-    onSuccessfulSongInfoResponse: () -> Unit,
-    onFailedLyricsResponse: (Throwable) -> Unit,
-    onLyricsSaved: () -> Unit
-) {
-    runCatching {
-        viewModel
-            .getSongInfo(SongInfo(song.title, song.artist))
-            ?: throw NullPointerException("Song info result is null")
+    matcher: SmartLyricsMatcher,
+    config: MatchConfig,
+): SongMatchInfo {
+    val lrcFile = song.filePath.toLrcFile()
+
+    // Already has synced lyrics (pre-scan or a previous run) -> nothing to do.
+    if (lrcFile?.exists() == true) {
+        return if (LrcPrescan.isSyncedLrc(lrcFile)) SongMatchInfo(LyricState.HAS_LYRICS)
+        else SongMatchInfo(LyricState.UNSYNCED)
     }
-        .onFailure(onFailedSongInfoResponse)
-        .onSuccess { songInfo ->
-            onSuccessfulSongInfoResponse()
 
-            runCatching {
-                viewModel
-                    .getSyncedLyrics(
-                        songInfo.songName!!,
-                        songInfo.artistName!!
-                    )
-                    ?: throw NullPointerException("Lyrics result is null")
-            }
-                .onFailure(onFailedLyricsResponse)
-                .onSuccess {
-                    val lrcContent = formatLyrics(
-                        songInfo,
-                        it,
-                        context,
-                        viewModel.userSettingsController.directlyModifyTimestamps
-                    )
+    val local = LocalTrack(
+        title = song.title,
+        artist = song.artist,
+        durationSec = song.durationMs?.let { it / 1000.0 },
+        album = song.album,
+    )
+    val candidates = FilenameParser.candidates(song.title, song.artist, song.filePath)
 
-                    if (viewModel.userSettingsController.embedLyricsIntoFiles) {
-                        embedLyricsInFile(
-                            context,
-                            song.filePath ?: throw NullPointerException("File path is null"),
-                            lrcContent
-                        )
-                    } else {
-                        writeLyricsToFile(
-                            song.filePath.toLrcFile(),
-                            lrcContent,
-                            context,
-                            song,
-                            viewModel.userSettingsController.sdCardPath
-                        )
-                    }
-
-                    onLyricsSaved()
-                }
+    val hits = runCatching { matcher.search(local, candidates, config) }
+        .getOrElse {
+            Log.e("MusicResync", "match failed for ${song.filePath}: ${it.message}")
+            return SongMatchInfo(LyricState.FAILED)
         }
+
+    val best = hits.firstOrNull()
+    if (best == null || best.tier == MatchTier.REJECT) {
+        return SongMatchInfo(
+            LyricState.NO_LYRICS,
+            confidencePercent = best?.confidence?.percent(),
+            provider = best?.provider,
+            matchedTitle = best?.result?.title,
+            matchedArtist = best?.result?.artist,
+            durationMatched = best?.confidence?.durationMatched ?: false,
+        )
+    }
+
+    val lyrics = runCatching { matcher.fetchLyrics(best, config) }.getOrNull()
+    if (lyrics.isNullOrBlank()) {
+        return SongMatchInfo(LyricState.NO_LYRICS, best.confidence.percent(), best.provider, best.result.title, best.result.artist, best.confidence.durationMatched)
+    }
+
+    val songInfo = SongInfo(songName = best.result.title, artistName = best.result.artist)
+    val lrcContent = formatLyrics(songInfo, lyrics, context, viewModel.userSettingsController.directlyModifyTimestamps)
+
+    runCatching {
+        if (viewModel.userSettingsController.embedLyricsIntoFiles) {
+            embedLyricsInFile(context, song.filePath ?: error("File path is null"), lrcContent)
+        } else {
+            writeLyricsToFile(lrcFile, lrcContent, context, song, viewModel.userSettingsController.sdCardPath)
+        }
+    }.getOrElse {
+        Log.e("MusicResync", "saving .lrc failed for ${song.filePath}: ${it.message}")
+        return SongMatchInfo(LyricState.FAILED, best.confidence.percent(), best.provider, best.result.title, best.result.artist)
+    }
+
+    val state = if (best.tier == MatchTier.AUTO_ACCEPT) LyricState.SYNCED else LyricState.REVIEW
+    return SongMatchInfo(state, best.confidence.percent(), best.provider, best.result.title, best.result.artist, best.confidence.durationMatched)
 }
 
 private fun formatLyrics(

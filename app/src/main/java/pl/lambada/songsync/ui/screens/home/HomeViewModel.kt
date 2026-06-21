@@ -8,9 +8,11 @@ import android.media.MediaMetadata
 import android.media.session.MediaSessionManager
 import android.net.Uri
 import android.provider.MediaStore
+import android.util.Log
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -35,6 +37,10 @@ import pl.lambada.songsync.domain.model.SortValues
 import pl.lambada.songsync.services.NotificationListener
 import pl.lambada.songsync.util.downloadLyrics
 import pl.lambada.songsync.util.ext.toLrcFile
+import pl.lambada.songsync.util.matching.LrcPrescan
+import pl.lambada.songsync.util.matching.LyricState
+import pl.lambada.songsync.util.matching.PrescanResult
+import pl.lambada.songsync.util.matching.SongMatchInfo
 import java.io.File
 import java.util.UUID
 
@@ -48,6 +54,42 @@ class HomeViewModel(
     var cachedSongs: List<Song>? = null
     val selectedSongs = mutableStateListOf<String>()
     var allSongs by mutableStateOf<List<Song>?>(null)
+
+    /** Per-song match outcome keyed by filePath, populated during and after batch sync. Drives row colour. */
+    val songMatchStatus = mutableStateMapOf<String, SongMatchInfo>()
+
+    /** Currently selected tab: All / Has Lyrics / No Lyrics. */
+    var selectedTab by mutableStateOf(LyricsTab.ALL)
+
+    /** Resolved lyric state for a song: live status if matched this session, else the on-disk .lrc check. */
+    fun lyricStateFor(song: Song): LyricState {
+        songMatchStatus[song.filePath]?.let { return it.state }
+        val lrc = song.filePath.toLrcFile()
+        return when {
+            lrc?.exists() != true -> LyricState.NO_LYRICS
+            LrcPrescan.isSyncedLrc(lrc) -> LyricState.HAS_LYRICS
+            else -> LyricState.UNSYNCED
+        }
+    }
+
+    private fun songHasLyrics(song: Song): Boolean = when (lyricStateFor(song)) {
+        LyricState.HAS_LYRICS, LyricState.SYNCED, LyricState.REVIEW, LyricState.UNSYNCED -> true
+        else -> false
+    }
+
+    /** Songs to show for the active tab (applied on top of the existing search/folder filters). */
+    val tabFilteredSongs: List<Song>
+        get() = when (selectedTab) {
+            LyricsTab.ALL -> displaySongs
+            LyricsTab.HAS_LYRICS -> displaySongs.filter { songHasLyrics(it) }
+            LyricsTab.NO_LYRICS -> displaySongs.filterNot { songHasLyrics(it) }
+        }
+
+    fun countFor(tab: LyricsTab): Int = when (tab) {
+        LyricsTab.ALL -> displaySongs.size
+        LyricsTab.HAS_LYRICS -> displaySongs.count { songHasLyrics(it) }
+        LyricsTab.NO_LYRICS -> displaySongs.count { !songHasLyrics(it) }
+    }
 
     var isRefreshing by mutableStateOf(false)
 
@@ -126,6 +168,8 @@ class HomeViewModel(
                 MediaStore.Audio.Media.ARTIST,
                 MediaStore.Audio.Media.DATA,
                 MediaStore.Audio.Media.ALBUM_ID,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.ALBUM,
             )
             val sortOrder = sortBy.name + " " + sortOrder.queryName
 
@@ -143,6 +187,8 @@ class HomeViewModel(
                 val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val albumIdColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
                 val pathColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                val durationColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val albumColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
 
                 while (it.moveToNext()) {
                     val title = it.getString(titleColumn).let { str ->
@@ -153,6 +199,10 @@ class HomeViewModel(
                     }
                     val albumId = it.getLong(albumIdColumn)
                     val filePath = it.getString(pathColumn)
+                    val durationMs = it.getLong(durationColumn).takeIf { d -> d > 0 }
+                    val album = it.getString(albumColumn).let { str ->
+                        if (str.isNullOrBlank() || str == "<unknown>") null else str
+                    }
 
                     @Suppress("SpellCheckingInspection")
                     val sArtworkUri = Uri.parse("content://media/external/audio/albumart")
@@ -161,11 +211,21 @@ class HomeViewModel(
                         albumId
                     )
 
-                    val song = Song(title, artist, imgUri, filePath)
+                    val song = Song(title, artist, imgUri, filePath, durationMs, album)
                     songs.add(song)
                 }
             }
             cursor?.close()
+
+            // MusicResync: no-network pre-scan -- strip _private suffixes and surface existing .lrc files so
+            // already-lyricked songs land in "Has Lyrics" immediately instead of the fetch queue.
+            runCatching {
+                val results = LrcPrescan.scan(songs.mapNotNull { s -> s.filePath })
+                val renamed = results.values.count { r -> r == PrescanResult.RENAMED_FROM_PRIVATE }
+                val present = results.values.count { r -> r != PrescanResult.NONE }
+                Log.i("MusicResync", "[prescan] ${songs.size} songs -> $present already have lyrics ($renamed renamed from _private)")
+            }
+
             cachedSongs = songs
             viewModelScope.launch { filterSongs() }
             viewModelScope.launch { updatePlayingSongInfo(context) }
@@ -331,6 +391,7 @@ class HomeViewModel(
             viewModel = this@HomeViewModel,
             context = context,
             onProgressUpdate = onProgressUpdate,
+            onSongResult = { filePath, info -> songMatchStatus[filePath] = info },
             onDownloadComplete = onDownloadComplete,
             onRateLimitReached = onRateLimitReached,
         )
@@ -367,4 +428,11 @@ class HomeViewModel(
         playingSongFilePath = ""
         playingSongAlbumArt = null
     }
+}
+
+/** The three top-level tabs the song list can be filtered by. */
+enum class LyricsTab(val titleRes: Int) {
+    ALL(R.string.tab_all),
+    HAS_LYRICS(R.string.tab_has_lyrics),
+    NO_LYRICS(R.string.tab_no_lyrics),
 }
