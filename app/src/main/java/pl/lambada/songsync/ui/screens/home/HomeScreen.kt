@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -55,6 +56,7 @@ import pl.lambada.songsync.ui.screens.home.components.FiltersDialog
 import pl.lambada.songsync.ui.screens.home.components.HomeAppBar
 import pl.lambada.songsync.ui.screens.home.components.HomeSearchBar
 import pl.lambada.songsync.ui.screens.home.components.HomeSearchThing
+import pl.lambada.songsync.ui.screens.home.components.LyricsTabRow
 import pl.lambada.songsync.ui.screens.home.components.SongItem
 import pl.lambada.songsync.ui.screens.home.components.SortDialog
 import pl.lambada.songsync.util.ext.BackPressHandler
@@ -169,7 +171,7 @@ fun LoadingScreen() {
     }
 }
 
-@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreenLoaded(
     selected: SnapshotStateList<String>,
@@ -285,6 +287,14 @@ fun HomeScreenLoaded(
             }
 
             item {
+                LyricsTabRow(
+                    selected = viewModel.selectedTab,
+                    countFor = viewModel::countFor,
+                    onSelect = { viewModel.selectedTab = it }
+                )
+            }
+
+            item {
                 if (viewModel.playingSongTitle.isNotEmpty()) {
                     Text(stringResource(id = R.string.now_playing_song))
                     SongItem(
@@ -318,8 +328,9 @@ fun HomeScreenLoaded(
                 }
             }
 
-            items(viewModel.displaySongs.size) { index ->
-                val song = viewModel.displaySongs[index]
+            val tabSongs = viewModel.tabFilteredSongs
+            items(tabSongs.size) { index ->
+                val song = tabSongs[index]
 
                 SongItem(
                     filePath = song.filePath
@@ -343,7 +354,9 @@ fun HomeScreenLoaded(
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                     disableMarquee = viewModel.userSettingsController.disableMarquee,
-                    showPath = viewModel.userSettingsController.showPath
+                    showPath = viewModel.userSettingsController.showPath,
+                    lyricState = viewModel.lyricStateFor(song),
+                    confidencePercent = viewModel.songMatchStatus[song.filePath]?.confidencePercent,
                 )
             }
 
