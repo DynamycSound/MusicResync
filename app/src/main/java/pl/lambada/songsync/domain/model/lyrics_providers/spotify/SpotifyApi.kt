@@ -117,8 +117,8 @@ data class Playability(
 
 @Serializable
 data class PagingInfo(
-    val nextOffset: Int,
-    val limit: Int
+    val nextOffset: Int? = null, // Spotify now returns null on the last page; was crashing the JSON parse
+    val limit: Int? = null
 )
 
 @Serializable

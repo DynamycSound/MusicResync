@@ -221,7 +221,7 @@ fun SharedTransitionScope.LyricsFetchScreen(
                         disableMarquee = viewModel.userSettingsController.disableMarquee,
                         allowTryingAgain =
                             viewModel.userSettingsController.selectedProvider != Providers.MUSIXMATCH,
-                        selectedProvider = viewModel.userSettingsController.selectedProvider,
+                        selectedProvider = viewModel.activeProvider,
                         onExpandProvidersRequest = { expandedProviders = true },
                     )
 

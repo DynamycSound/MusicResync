@@ -11,6 +11,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import pl.lambada.songsync.ui.screens.home.HomeViewModel
+import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.ui.screens.home.components.batchDownload.BatchDownloadWarningDialog
 import pl.lambada.songsync.ui.screens.home.components.batchDownload.DownloadCompleteDialog
 import pl.lambada.songsync.ui.screens.home.components.batchDownload.DownloadProgressDialog
@@ -26,13 +27,24 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
     var successCount by rememberSaveable { mutableIntStateOf(0) }
     var noLyricsCount by rememberSaveable { mutableIntStateOf(0) }
     var failedCount by rememberSaveable { mutableIntStateOf(0) }
+    var correctMetadata by rememberSaveable { mutableStateOf(false) }
+    var skipExisting by rememberSaveable { mutableStateOf(true) }
+    var autoTryProviders by rememberSaveable { mutableStateOf(true) }
     val count = successCount + failedCount + noLyricsCount
     val total = songs.size
+    val songsWithoutLyrics = songs.count {
+        val st = viewModel.lyricStateFor(it)
+        st == LyricState.NO_LYRICS || st == LyricState.FAILED
+    }
+    val songsToProcess = if (skipExisting) songsWithoutLyrics else total
     val context = LocalContext.current
     val startBatchDownload = remember {
         {
             viewModel.batchDownloadLyrics(
                 context,
+                correctMetadata = correctMetadata,
+                skipExisting = skipExisting,
+                autoTryProviders = autoTryProviders,
                 onProgressUpdate = { newSuccessCount, newNoLyricsCount, newFailedCount ->
                     successCount = newSuccessCount
                     noLyricsCount = newNoLyricsCount
@@ -47,7 +59,7 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
     when (uiState) {
         UiState.Cancelled -> onDone()
         UiState.Warning -> BatchDownloadWarningDialog(
-            songsCount = songs.size,
+            songsToProcess = songsToProcess,
             onConfirm = {
                 uiState = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                     UiState.LegacyPrompt
@@ -59,6 +71,12 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
             onDismiss = { uiState = UiState.Cancelled },
             embedLyrics = viewModel.userSettingsController.embedLyricsIntoFiles,
             onEmbedLyricsChangeRequest = viewModel.userSettingsController::updateEmbedLyrics,
+            correctMetadata = correctMetadata,
+            onCorrectMetadataChangeRequest = { correctMetadata = it },
+            skipExisting = skipExisting,
+            onSkipExistingChangeRequest = { skipExisting = it },
+            autoTryProviders = autoTryProviders,
+            onAutoTryProvidersChangeRequest = { autoTryProviders = it },
         )
 
         UiState.LegacyPrompt -> LegacyPromptDialog(

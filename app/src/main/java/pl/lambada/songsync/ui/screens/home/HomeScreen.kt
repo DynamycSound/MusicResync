@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -193,6 +196,7 @@ fun HomeScreenLoaded(
             onDone = { onBatchDownloadState(false) })
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     PullToRefreshBox(
         isRefreshing = viewModel.isRefreshing,
         state = refreshState,
@@ -341,14 +345,30 @@ fun HomeScreenLoaded(
                         viewModel.selectSong(song, newValue)
                     },
                     onNavigateToSongRequest = {
-                        navController.navigate(
-                            LyricsFetchScreen(
-                                songName = song.title ?: error("song.title was null"),
-                                artists = song.artist ?: "",
-                                coverUri = song.imgUri.toString(),
-                                filePath = song.filePath
+                        val hasLyrics = viewModel.lyricStateFor(song).let {
+                            it == pl.lambada.songsync.util.matching.LyricState.HAS_LYRICS ||
+                            it == pl.lambada.songsync.util.matching.LyricState.SYNCED ||
+                            it == pl.lambada.songsync.util.matching.LyricState.REVIEW
+                        }
+                        if (hasLyrics) {
+                            // Has lyrics already -> open the synced-lyrics player to view/tune offset, not re-fetch.
+                            navController.navigate(
+                                pl.lambada.songsync.ui.PlayerScreen(
+                                    filePath = song.filePath,
+                                    songName = song.title ?: "",
+                                    artists = song.artist ?: ""
+                                )
                             )
-                        )
+                        } else {
+                            navController.navigate(
+                                LyricsFetchScreen(
+                                    songName = song.title ?: error("song.title was null"),
+                                    artists = song.artist ?: "",
+                                    coverUri = song.imgUri.toString(),
+                                    filePath = song.filePath
+                                )
+                            )
+                        }
                     },
                     song = song,
                     sharedTransitionScope = sharedTransitionScope,
@@ -357,10 +377,40 @@ fun HomeScreenLoaded(
                     showPath = viewModel.userSettingsController.showPath,
                     lyricState = viewModel.lyricStateFor(song),
                     confidencePercent = viewModel.songMatchStatus[song.filePath]?.confidencePercent,
+                    onPlay = if (viewModel.lyricStateFor(song).let {
+                            it == pl.lambada.songsync.util.matching.LyricState.HAS_LYRICS ||
+                            it == pl.lambada.songsync.util.matching.LyricState.SYNCED ||
+                            it == pl.lambada.songsync.util.matching.LyricState.REVIEW
+                        }) {
+                        {
+                            navController.navigate(
+                                pl.lambada.songsync.ui.PlayerScreen(
+                                    filePath = song.filePath,
+                                    songName = song.title ?: "",
+                                    artists = song.artist ?: ""
+                                )
+                            )
+                        }
+                    } else null,
                 )
             }
 
-            item { Spacer(modifier = Modifier.height(4.dp)) }
+            item { Spacer(modifier = Modifier.height(96.dp)) } // room for the batch FAB
+        }
+    }
+
+        // Primary action: one tap opens the smart batch (fallback ladder + correct-metadata option). Hidden
+        // on the "Has Lyrics" tab, where there is nothing left to fetch.
+        if (viewModel.selectedTab != LyricsTab.HAS_LYRICS) {
+            ExtendedFloatingActionButton(
+                onClick = { onBatchDownloadState(true) },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 20.dp),
+                icon = { Icon(Icons.Default.LibraryMusic, contentDescription = null) },
+                text = { Text(stringResource(id = R.string.batch_download_lyrics)) },
+            )
         }
     }
 }

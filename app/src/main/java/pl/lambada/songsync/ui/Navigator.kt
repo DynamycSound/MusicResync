@@ -17,6 +17,7 @@ import pl.lambada.songsync.ui.screens.init.InitScreen
 import pl.lambada.songsync.ui.screens.init.InitScreenViewModel
 import pl.lambada.songsync.ui.screens.lyricsFetch.LyricsFetchScreen
 import pl.lambada.songsync.ui.screens.lyricsFetch.LyricsFetchViewModel
+import pl.lambada.songsync.ui.screens.player.SyncedLyricsPlayerScreen
 import pl.lambada.songsync.ui.screens.settings.SettingsScreen
 import pl.lambada.songsync.ui.screens.settings.SettingsViewModel
 
@@ -78,6 +79,15 @@ fun Navigator(
                     navController = navController
                 )
             }
+            animatedComposable<PlayerScreen> {
+                val args = it.toRoute<PlayerScreen>()
+                SyncedLyricsPlayerScreen(
+                    filePath = args.filePath,
+                    songName = args.songName,
+                    artists = args.artists,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }
@@ -110,3 +120,10 @@ data class LocalSong(
 
 @Serializable
 object ScreenSettings
+
+@Serializable
+data class PlayerScreen(
+    val filePath: String,
+    val songName: String,
+    val artists: String,
+)

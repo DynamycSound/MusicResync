@@ -164,6 +164,28 @@ fun embedLyricsInFile(
     }
 }
 
+/**
+ * MusicResync: writes the matched title/artist back into the audio file's tags via TagLib. Only invoked for
+ * confident matches when the user enabled "Correct the metadata". Best-effort and failure-tolerant.
+ */
+fun writeCorrectedTags(context: Context, filePath: String, title: String?, artist: String?): Boolean {
+    if (title.isNullOrBlank() && artist.isNullOrBlank()) return false
+    return try {
+        val fd = getFileDescriptorFromPath(context, filePath, mode = "w")
+            ?: throw IllegalStateException("File descriptor is null")
+        val metadata = TagLib.getMetadata(fd.dup().detachFd(), false) ?: error("Metadata is null")
+        val updated = metadata.propertyMap.apply {
+            if (!title.isNullOrBlank()) put("TITLE", arrayOf(title))
+            if (!artist.isNullOrBlank()) put("ARTIST", arrayOf(artist))
+        }
+        TagLib.savePropertyMap(fd.dup().detachFd(), propertyMap = updated)
+        true
+    } catch (e: Exception) {
+        Log.e("MusicResync", "Error correcting tags: ${e.message}")
+        false
+    }
+}
+
 fun handleSecurityException(
     securityException: SecurityException,
     intentPassthrough: (PendingIntent) -> Unit
@@ -196,6 +218,9 @@ suspend fun downloadLyrics(
     songs: List<Song>,
     viewModel: HomeViewModel,
     context: Context,
+    correctMetadata: Boolean = false,
+    skipExisting: Boolean = true,
+    autoTryProviders: Boolean = true,
     onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int) -> Unit,
     onSongResult: (filePath: String, info: SongMatchInfo) -> Unit = { _, _ -> },
     onDownloadComplete: () -> Unit,
@@ -207,13 +232,25 @@ suspend fun downloadLyrics(
     var consecutiveFailures = 0
 
     val matcher = SmartLyricsMatcher()
-    val config = MatchConfig() // tunables (delay/retries/provider order) wired to Settings in a later step
+    // Auto-try ON: fall through LRCLib -> Netease. OFF: LRCLib only.
+    val config = MatchConfig(
+        providerOrder = if (autoTryProviders) listOf(Providers.LRCLIB, Providers.NETEASE) else listOf(Providers.LRCLIB)
+    )
 
     songs.forEach { song ->
         val path = song.filePath
         if (path != null) onSongResult(path, SongMatchInfo(LyricState.FETCHING))
 
-        val info = matchAndSaveSong(song, viewModel, context, matcher, config)
+        // When skipExisting is on, songs that already have lyrics are left untouched (and reported as such).
+        if (skipExisting && song.filePath.toLrcFile()?.exists() == true) {
+            val st = if (LrcPrescan.isSyncedLrc(song.filePath.toLrcFile()!!)) LyricState.HAS_LYRICS else LyricState.UNSYNCED
+            if (path != null) onSongResult(path, SongMatchInfo(st))
+            successCount++
+            onProgressUpdate(successCount, noLyricsCount, failedCount)
+            return@forEach
+        }
+
+        val info = matchAndSaveSong(song, viewModel, context, matcher, config, correctMetadata, overwriteExisting = !skipExisting)
 
         when (info.state) {
             LyricState.SYNCED, LyricState.REVIEW, LyricState.HAS_LYRICS, LyricState.UNSYNCED -> {
@@ -246,11 +283,13 @@ suspend fun matchAndSaveSong(
     context: Context,
     matcher: SmartLyricsMatcher,
     config: MatchConfig,
+    correctMetadata: Boolean = false,
+    overwriteExisting: Boolean = false,
 ): SongMatchInfo {
     val lrcFile = song.filePath.toLrcFile()
 
-    // Already has synced lyrics (pre-scan or a previous run) -> nothing to do.
-    if (lrcFile?.exists() == true) {
+    // Already has synced lyrics (pre-scan or a previous run) -> nothing to do, unless we're re-fetching.
+    if (!overwriteExisting && lrcFile?.exists() == true) {
         return if (LrcPrescan.isSyncedLrc(lrcFile)) SongMatchInfo(LyricState.HAS_LYRICS)
         else SongMatchInfo(LyricState.UNSYNCED)
     }
@@ -298,6 +337,14 @@ suspend fun matchAndSaveSong(
     }.getOrElse {
         Log.e("MusicResync", "saving .lrc failed for ${song.filePath}: ${it.message}")
         return SongMatchInfo(LyricState.FAILED, best.confidence.percent(), best.provider, best.result.title, best.result.artist)
+    }
+
+    // Optional: when the user ticked "Correct the metadata", write the matched title/artist back to the audio
+    // tags -- but only for confident (auto-accept) matches, so we never overwrite tags from a shaky guess.
+    if (correctMetadata && best.tier == MatchTier.AUTO_ACCEPT && song.filePath != null) {
+        runCatching {
+            writeCorrectedTags(context, song.filePath, best.result.title, best.result.artist)
+        }.onFailure { Log.e("MusicResync", "tag correction failed for ${song.filePath}: ${it.message}") }
     }
 
     val state = if (best.tier == MatchTier.AUTO_ACCEPT) LyricState.SYNCED else LyricState.REVIEW

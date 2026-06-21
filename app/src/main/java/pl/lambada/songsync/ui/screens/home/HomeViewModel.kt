@@ -382,6 +382,9 @@ class HomeViewModel(
 
     fun batchDownloadLyrics(
         context: Context,
+        correctMetadata: Boolean = false,
+        skipExisting: Boolean = true,
+        autoTryProviders: Boolean = true,
         onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int) -> Unit,
         onDownloadComplete: () -> Unit,
         onRateLimitReached: () -> Unit
@@ -390,6 +393,9 @@ class HomeViewModel(
             songs = songsToBatchDownload,
             viewModel = this@HomeViewModel,
             context = context,
+            correctMetadata = correctMetadata,
+            skipExisting = skipExisting,
+            autoTryProviders = autoTryProviders,
             onProgressUpdate = onProgressUpdate,
             onSongResult = { filePath, info -> songMatchStatus[filePath] = info },
             onDownloadComplete = onDownloadComplete,

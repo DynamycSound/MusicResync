@@ -5,7 +5,16 @@
     <string name="tab_has_lyrics">Has Lyrics</string>
     <string name="tab_no_lyrics">No Lyrics</string>
     <string name="correct_metadata">Correct the metadata</string>
-    <string name="correct_metadata_desc">Also write corrected title/artist tags to high-confidence matches</string>
+    <string name="correct_metadata_desc">Also fix the title/artist tags on confident matches</string>
+    <string name="skip_existing_lyrics">Skip songs that already have lyrics</string>
+    <string name="skip_existing_lyrics_desc">Leave already-synced songs untouched</string>
+    <string name="save_mode_desc">Embed lyrics inside the song file. Otherwise a .lrc file is saved next to it.</string>
+    <string name="will_fetch_for_n_songs">This will fetch lyrics for %1$d songs.</string>
+    <string name="all_songs_have_lyrics">All songs already have lyrics. Turn off \"Skip existing\" to re-fetch.</string>
+    <string name="advanced">Advanced</string>
+    <string name="auto_try_providers">Auto-try other providers</string>
+    <string name="auto_try_providers_desc">If a song isn\'t found, automatically try the other providers before giving up</string>
+    <string name="private_lrc_note">Snaptube downloads: a matching .lrc with a \"_private\" suffix is detected automatically and the suffix removed so players can see it — no fetch needed.</string>
     <string name="confidence_verify">Please verify</string>
     <string name="auto_best_effort">Auto Best-Effort</string>
     <string name="manual_search">Manual Search</string>

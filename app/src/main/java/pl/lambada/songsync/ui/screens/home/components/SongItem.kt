@@ -21,7 +21,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.contentColorFor
@@ -59,6 +64,7 @@ fun SongItem(
     showPath: Boolean,
     lyricState: LyricState = LyricState.NO_LYRICS,
     confidencePercent: Int? = null,
+    onPlay: (() -> Unit)? = null,
 ) {
     val painter = rememberAsyncImagePainter(
         ImageRequest.Builder(LocalContext.current).data(data = song.imgUri).apply {
@@ -149,6 +155,18 @@ fun SongItem(
             }
         }
 
+        // Play button (only when the song has lyrics) opens the synced-lyrics player.
+        if (onPlay != null) {
+            IconButton(onClick = onPlay, modifier = Modifier.align(Alignment.CenterVertically)) {
+                Icon(
+                    imageVector = Icons.Filled.PlayCircle,
+                    contentDescription = "Play with synced lyrics",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(30.dp)
+                )
+            }
+        }
+
         LyricStatusBadge(
             state = lyricState,
             confidencePercent = confidencePercent,
@@ -158,9 +176,9 @@ fun SongItem(
 }
 
 /**
- * Compact status chip on the trailing edge of a song row: a colour-coded dot (green = synced, amber = verify,
- * red = missing) plus the confidence percentage when known. Animates colour changes as a song moves between
- * states during a batch run.
+ * Trailing lyric-status indicator: a single music note tinted by state — green when the song has synced lyrics,
+ * amber while it's worth verifying, red when it has none. No border, dot or symbols; just the note, with a
+ * spinner shown while a match is being fetched. Colour animates as a song moves between states during a batch.
  */
 @Composable
 fun LyricStatusBadge(
@@ -170,41 +188,30 @@ fun LyricStatusBadge(
 ) {
     if (state == LyricState.FETCHING) {
         CircularProgressIndicator(
-            modifier = modifier.size(18.dp),
+            modifier = modifier.size(20.dp),
             strokeWidth = 2.dp,
             color = MaterialTheme.colorScheme.primary
         )
         return
     }
 
-    val (dot, label) = when (state) {
-        LyricState.SYNCED, LyricState.HAS_LYRICS -> Color(0xFF2E7D32) to "✓"
-        LyricState.REVIEW -> Color(0xFFF9A825) to "⚠"
-        LyricState.UNSYNCED -> Color(0xFF9E9E9E) to "≈"
-        LyricState.NO_LYRICS -> Color(0xFFC62828) to "✗"
-        LyricState.FAILED -> Color(0xFFC62828) to "!"
-        LyricState.FETCHING -> Color(0xFF9E9E9E) to ""
+    val tint = when (state) {
+        LyricState.SYNCED, LyricState.HAS_LYRICS -> Color(0xFF2E7D32) // green: has synced lyrics
+        LyricState.REVIEW -> Color(0xFFF9A825)                        // amber: verify
+        LyricState.UNSYNCED -> Color(0xFF2E7D32)                      // has (plain) lyrics -> still green
+        LyricState.NO_LYRICS, LyricState.FAILED -> Color(0xFFC62828)  // red: no lyrics
+        LyricState.FETCHING -> Color(0xFF9E9E9E)
     }
-    val animatedDot by animateColorAsState(dot, label = "badgeColor")
+    val animatedTint by animateColorAsState(tint, label = "noteColor")
+    val description = when (state) {
+        LyricState.NO_LYRICS, LyricState.FAILED -> "No lyrics"
+        else -> "Has lyrics"
+    }
 
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(animatedDot.copy(alpha = 0.14f))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(RoundedCornerShape(50))
-                .background(animatedDot)
-        )
-        Text(
-            text = confidencePercent?.let { "$it%" } ?: label,
-            fontSize = 12.sp,
-            color = animatedDot
-        )
-    }
+    Icon(
+        imageVector = Icons.Filled.MusicNote,
+        contentDescription = description,
+        tint = animatedTint,
+        modifier = modifier.size(26.dp)
+    )
 }

@@ -12,8 +12,16 @@ import kotlinx.coroutines.launch
 import pl.lambada.songsync.R
 import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
+import pl.lambada.songsync.data.remote.lyrics_providers.MatchConfig
+import pl.lambada.songsync.data.remote.lyrics_providers.SmartLyricsMatcher
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.ui.LocalSong
+import pl.lambada.songsync.util.Providers
+import pl.lambada.songsync.util.matching.FilenameParser
+import pl.lambada.songsync.util.matching.LocalTrack
+import pl.lambada.songsync.util.matching.MatchStrategy
+import pl.lambada.songsync.util.matching.MatchTier
+import pl.lambada.songsync.util.matching.QueryCandidate
 import pl.lambada.songsync.util.embedLyricsInFile
 import pl.lambada.songsync.util.ext.getVersion
 import pl.lambada.songsync.util.generateLrcContent
@@ -41,6 +49,9 @@ class LyricsFetchViewModel(
     private var queryOffset by mutableIntStateOf(0)
     var lrcOffset by mutableIntStateOf(0)
 
+    /** The provider that actually produced the shown lyrics (may differ from the chosen one after fallback). */
+    var activeProvider by mutableStateOf(userSettingsController.selectedProvider)
+
     var lyricsFetchState by mutableStateOf<LyricsFetchState>(LyricsFetchState.NotSubmitted)
 
     private suspend fun getSyncedLyrics(title: String, artist: String): String? =
@@ -54,30 +65,58 @@ class LyricsFetchViewModel(
             userSettingsController.unsyncedFallbackMusixmatch
         )
 
+    private val matcher = SmartLyricsMatcher(providerService = lyricsProviderService)
+
     fun loadSongInfo(context: Context, tryingAgain: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
+            queryState = QueryStatus.Pending
+            lyricsFetchState = LyricsFetchState.NotSubmitted
+
             try {
-                queryState = QueryStatus.Pending
-                lyricsFetchState = LyricsFetchState.NotSubmitted
-                queryOffset = if (tryingAgain) queryOffset + 1 else 0
+                // Clean the (often messy) tags/filename into proper query candidates, score every provider hit
+                // by title/artist/duration, and pick the best -- the same smart engine the batch uses. This is
+                // what makes a junk tag like "Kendrick Lamar - HUMBLE. / KendrickLamarVEVO" actually resolve,
+                // and stops a wrong "first result" (e.g. a random remix) from being accepted.
+                val durationSec = source?.filePath?.let { readDurationSeconds(context, it) }
+                val local = LocalTrack(querySongName, queryArtistName, durationSec)
+                val candidates = FilenameParser.candidates(querySongName, queryArtistName, source?.filePath)
+                    .ifEmpty { listOf(QueryCandidate(querySongName, queryArtistName ?: "", MatchStrategy.TAGS)) }
 
-                val result = lyricsProviderService
-                    .getSongInfo(
-                        query = SongInfo(querySongName, queryArtistName),
-                        offset = queryOffset,
-                        provider = userSettingsController.selectedProvider
-                    )
-                    ?: error("Error fetching lyrics for the song.")
+                // Selected provider first, then the rest as automatic fallback.
+                val order = (listOf(userSettingsController.selectedProvider) +
+                        Providers.entries.filter { it != userSettingsController.selectedProvider }).distinct()
 
-                queryState = QueryStatus.Success(result)
-                loadLyrics(result.songName!!, result.artistName!!)
-            } catch (e: Exception) {
-                queryState = when (e) {
-                    is UnknownHostException -> QueryStatus.NoConnection
-                    else -> QueryStatus.Failed(e)
+                val hits = matcher.search(local, candidates, MatchConfig(providerOrder = order))
+                val best = hits.firstOrNull { it.tier != MatchTier.REJECT } ?: hits.firstOrNull()
+                    ?: run {
+                        queryState = QueryStatus.Failed(Exception("No provider had matching synced lyrics."))
+                        return@launch
+                    }
+
+                val lyrics = matcher.fetchLyrics(best)
+                if (lyrics.isNullOrBlank()) {
+                    queryState = QueryStatus.Failed(Exception("Found a match but no synced lyrics."))
+                    return@launch
                 }
+
+                activeProvider = best.provider
+                queryState = QueryStatus.Success(
+                    SongInfo(songName = best.result.title, artistName = best.result.artist)
+                )
+                lyricsFetchState = LyricsFetchState.Success(lyrics)
+            } catch (e: UnknownHostException) {
+                queryState = QueryStatus.NoConnection
+            } catch (e: Exception) {
+                queryState = QueryStatus.Failed(e)
             }
         }
+    }
+
+    /** Switch provider from the single-song screen (tapping the provider label) and re-fetch with it first. */
+    fun changeProvider(provider: Providers, context: Context) {
+        userSettingsController.updateSelectedProviders(provider)
+        activeProvider = provider
+        loadSongInfo(context, tryingAgain = false)
     }
 
     fun saveLyricsToFile(
@@ -170,6 +209,15 @@ class LyricsFetchViewModel(
         }
     }
 }
+
+/** Reads the audio file's duration in seconds (for confidence scoring); null if it can't be read. */
+private fun readDurationSeconds(context: Context, filePath: String): Double? = runCatching {
+    val mmr = android.media.MediaMetadataRetriever()
+    mmr.setDataSource(filePath)
+    val ms = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+    mmr.release()
+    ms?.let { it / 1000.0 }
+}.getOrNull()
 
 private fun resolveEmbedErrorMessage(context: Context, exception: Throwable): String {
     return when (exception) {

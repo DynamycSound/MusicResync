@@ -4,6 +4,7 @@ import android.util.Log
 import kotlinx.coroutines.delay
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.NeteaseAPI
+import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.util.Providers
 import pl.lambada.songsync.util.matching.ConfidenceBreakdown
 import pl.lambada.songsync.util.matching.ConfidenceScorer
@@ -49,6 +50,8 @@ data class MatchConfig(
 class SmartLyricsMatcher(
     private val lrcLib: LRCLibAPI = LRCLibAPI(),
     private val netease: NeteaseAPI = NeteaseAPI(),
+    /** Optional: enables Apple/Musixmatch/Spotify/QQ as scored fallbacks in the single-song flow. */
+    private val providerService: LyricsProviderService? = null,
 ) {
 
     /**
@@ -75,7 +78,7 @@ class SmartLyricsMatcher(
                 val found = when (provider) {
                     Providers.LRCLIB -> searchLrcLib(query, local, cand, config, log)
                     Providers.NETEASE -> searchNetease(query, local, cand, config, log)
-                    else -> emptyList() // other providers handled via the manual/single-fetch screen
+                    else -> searchGeneric(provider, local, cand, config, log)
                 }
 
                 for (hit in found) {
@@ -101,17 +104,50 @@ class SmartLyricsMatcher(
         return ranked
     }
 
-    /** Resolves the synced LRC body for a chosen hit (inline for LRCLib, second fetch for Netease). */
+    /** Resolves the synced LRC body for a chosen hit (inline for LRCLib/generic, second fetch for Netease). */
     suspend fun fetchLyrics(hit: ScoredHit, config: MatchConfig = MatchConfig(), log: (String) -> Unit = { Log.i(TAG, it) }): String? {
         return when (hit.provider) {
-            Providers.LRCLIB -> hit.inlineLyrics
             Providers.NETEASE -> hit.neteaseId?.let { id ->
                 runCatching { withRetry(config.maxRetries) { netease.getSyncedLyrics(id) } }
                     .onFailure { log("  [Netease] lyric fetch failed: ${it.message}") }
                     .getOrNull()
             }
-            else -> null
+            else -> hit.inlineLyrics // LRCLib + generic providers carry the lyrics inline
         }?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Scored single-result path for providers that aren't LRCLib/Netease (Apple, Musixmatch, Spotify, QQ).
+     * Each lookup is wrapped so a provider outage (timeout, JSON change) yields no hit instead of an error,
+     * and the result is run through the confidence scorer so a wrong "first result" (e.g. a remix) is rejected
+     * rather than blindly accepted. Lyrics are only fetched when the match already looks promising.
+     */
+    private suspend fun searchGeneric(
+        provider: Providers, local: LocalTrack, cand: QueryCandidate, config: MatchConfig, log: (String) -> Unit
+    ): List<ScoredHit> {
+        val service = providerService ?: return emptyList()
+        return runCatching {
+            val info = withRetry(config.maxRetries, onRetry = { a, d, e -> log("  [${provider.displayName}] retry $a in ${d}ms (${e.message})") }) {
+                service.getSongInfo(SongInfo(cand.title, cand.artist), 0, provider)
+            } ?: return emptyList()
+
+            val pr = ProviderResult(info.songName, info.artistName, null, null, true)
+            val conf = ConfidenceScorer.score(local, pr)
+            // Only spend a lyrics request if the metadata match is at least review-grade.
+            val lyrics = if (conf.score >= ConfidenceScorer.REVIEW_THRESHOLD) {
+                runCatching {
+                    withRetry(config.maxRetries) {
+                        service.getSyncedLyrics(
+                            info.songName ?: return@withRetry null,
+                            info.artistName ?: return@withRetry null,
+                            provider,
+                        )
+                    }
+                }.getOrNull()
+            } else null
+
+            listOf(ScoredHit(provider, cand.strategy, pr, conf, lyrics, null))
+        }.onFailure { log("  [${provider.displayName}] failed: ${it.message}") }.getOrDefault(emptyList())
     }
 
     private suspend fun searchLrcLib(
