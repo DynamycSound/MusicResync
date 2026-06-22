@@ -175,13 +175,17 @@ class SmartLyricsMatcher(
             }
         }.onFailure { log("  [LRCLib] search failed: ${it.message}") }.getOrDefault(emptyList())
 
+        // Score ALL synced hits, then keep the best few. A title-only query can return 20 results where the
+        // right track (matched by duration) is well down the relevance list -- scoring before the cap lets it
+        // survive instead of being truncated away by LRCLib's ordering.
         return results
             .filter { !it.syncedLyrics.isNullOrBlank() } // batch needs synced lyrics
-            .take(config.maxCandidatesPerProvider)
             .map { r ->
                 val pr = ProviderResult(r.trackName, r.artistName, r.duration, r.albumName, true)
                 ScoredHit(Providers.LRCLIB, cand.strategy, pr, scoreFor(local, pr, cand.strategy), r.syncedLyrics, null)
             }
+            .sortedByDescending { it.confidence.score }
+            .take(config.maxCandidatesPerProvider)
     }
 
     private suspend fun searchNetease(

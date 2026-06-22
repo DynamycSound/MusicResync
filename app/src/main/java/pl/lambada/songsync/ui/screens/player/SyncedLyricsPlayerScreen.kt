@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
@@ -39,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -47,11 +49,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import pl.lambada.songsync.R
+import pl.lambada.songsync.util.applyOffsetToLyrics
+import pl.lambada.songsync.util.showToast
 import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -95,11 +104,14 @@ fun SyncedLyricsPlayerScreen(
     onBack: () -> Unit,
     onFindOnline: () -> Unit = {},
 ) {
+    val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
-    val lrcText = remember(filePath) {
-        runCatching {
-            File(filePath.substringBeforeLast('.') + ".lrc").takeIf { it.exists() }?.readText()
-        }.getOrNull().orEmpty()
+    var lrcText by remember(filePath) {
+        mutableStateOf(
+            runCatching {
+                File(filePath.substringBeforeLast('.') + ".lrc").takeIf { it.exists() }?.readText()
+            }.getOrNull().orEmpty()
+        )
     }
     val lines = remember(lrcText) { parseSyncedLrc(lrcText) }
 
@@ -117,6 +129,29 @@ fun SyncedLyricsPlayerScreen(
         onDispose { runCatching { player.release() } }
     }
 
+    // Auto-play on open so the user can immediately verify the sync (especially when arriving from the
+    // result screen's "Adjust timing").
+    LaunchedEffect(Unit) {
+        runCatching { if (!player.isPlaying) { player.start(); isPlaying = true } }
+    }
+
+    // Bakes the current offset into the .lrc (shifts timestamps) so the correction persists, then zeroes the
+    // live offset since it's now part of the file.
+    fun saveSync() {
+        val off = offsetMs.roundToInt()
+        val file = File(filePath.substringBeforeLast('.') + ".lrc")
+        if (off == 0 || !file.exists()) {
+            showToast(context, context.getString(R.string.sync_saved))
+            return
+        }
+        runCatching {
+            val shifted = applyOffsetToLyrics(file.readText(), off)
+            file.writeText(shifted)
+            lrcText = shifted
+            offsetMs = 0f
+        }.onSuccess { showToast(context, context.getString(R.string.sync_saved)) }
+    }
+
     // Poll playback position while playing.
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
@@ -126,12 +161,15 @@ fun SyncedLyricsPlayerScreen(
         }
     }
 
-    val effectivePos = positionMs + offsetMs.roundToInt()
-    val currentIndex = remember(effectivePos, lines) {
-        lines.indexOfLast { it.timeMs <= effectivePos }.coerceAtLeast(0)
-    }
-
     val listState = rememberLazyListState()
+    // derivedStateOf: the lyric list recomposes only when the highlighted line actually changes, NOT on every
+    // 120ms position poll. That per-poll recomposition of every visible line was the source of the scroll jank.
+    val currentIndex by remember {
+        derivedStateOf {
+            if (lines.isEmpty()) 0
+            else lines.indexOfLast { it.timeMs <= positionMs + offsetMs.roundToInt() }.coerceAtLeast(0)
+        }
+    }
     LaunchedEffect(currentIndex) {
         if (lines.isNotEmpty()) runCatching { listState.animateScrollToItem(currentIndex, scrollOffset = -300) }
     }
@@ -165,6 +203,9 @@ fun SyncedLyricsPlayerScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { saveSync() }) {
+                        Icon(Icons.Filled.Check, contentDescription = "Save sync")
+                    }
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "More")
                     }
@@ -212,15 +253,21 @@ fun SyncedLyricsPlayerScreen(
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                                 label = "lineColor"
                             )
-                            val scale by animateFloatAsState(if (isCurrent) 1f else 0.96f, label = "lineScale")
+                            // Emphasis via graphicsLayer scale (no relayout) + a constant font size, so the
+                            // current line grows smoothly instead of forcing a text re-measure each change.
+                            val scale by animateFloatAsState(if (isCurrent) 1.12f else 1f, label = "lineScale")
                             Text(
                                 text = lines[i].text.ifBlank { "♪" },
                                 color = color,
-                                fontSize = (if (isCurrent) 24 else 20).sp,
+                                fontSize = 21.sp,
                                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
                                 lineHeight = 30.sp,
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .graphicsLayer {
+                                        scaleX = scale; scaleY = scale
+                                        transformOrigin = TransformOrigin(0f, 0.5f)
+                                    }
                                     .clickable {
                                         // tap a line to jump the track to it
                                         val seekTo = max(0, lines[i].timeMs.toInt() - offsetMs.roundToInt())

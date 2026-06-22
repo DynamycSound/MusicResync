@@ -40,5 +40,5 @@ data class SongMatchInfo(
 ) {
     val hasLyrics: Boolean
         get() = state == LyricState.HAS_LYRICS || state == LyricState.SYNCED ||
-            state == LyricState.REVIEW || state == LyricState.UNSYNCED
+            state == LyricState.REVIEW
 }

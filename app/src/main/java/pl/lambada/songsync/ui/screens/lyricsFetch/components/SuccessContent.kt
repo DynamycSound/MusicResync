@@ -40,6 +40,8 @@ fun SharedTransitionScope.SuccessContent(
     onSaveLyrics: (String) -> Unit,
     onEmbedLyrics: (String) -> Unit,
     onCopyLyrics: (String) -> Unit,
+    /** Saves the .lrc then opens the synced player to verify/correct timing. Null for non-local sources. */
+    onAdjustTiming: ((String) -> Unit)? = null,
     openUri: (String) -> Unit,
     lyricsFetchState: LyricsFetchState,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -95,18 +97,10 @@ fun SharedTransitionScope.SuccessContent(
                 LyricsFetchState.NotSubmitted -> { /* nothing */ }
 
                 is LyricsFetchState.Success -> LyricsSuccessContent(
-                    lyrics = it.lyrics.let {
-                        if (offset != 0 && directOffset) {
-                            applyOffsetToLyrics(it, offset)
-                        } else {
-                            it
-                        }
-                    },
-                    offset = offset,
-                    onSetOffset = onSetOffset,
+                    lyrics = it.lyrics,
                     onSaveLyrics = { onSaveLyrics(it.lyrics) },
                     onEmbedLyrics = { onEmbedLyrics(it.lyrics) },
-                    onCopyLyrics = { onCopyLyrics(it.lyrics) },
+                    onAdjustTiming = onAdjustTiming?.let { fn -> { fn(it.lyrics) } },
                 )
 
                 is LyricsFetchState.Failed -> Text(stringResource(R.string.this_track_has_no_lyrics))

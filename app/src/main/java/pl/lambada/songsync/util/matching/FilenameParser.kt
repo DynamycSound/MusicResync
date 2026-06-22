@@ -51,6 +51,9 @@ object FilenameParser {
 
     private fun loosenTitle(title: String): String = versionSuffix.replace(title, "").trim()
 
+    /** Lowercased alphanumerics only — collapses "$uicideboy$"/"_UICIDEBOY_" to the single token "uicideboy". */
+    private fun collapse(s: String): String = s.lowercase().filter { it.isLetterOrDigit() }
+
     /** Pull "feat./ft." artists out of a title, returning the cleaned title and the extracted names. */
     private fun extractFeatured(title: String): Pair<String, List<String>> {
         val m = TextMatch.featRegex.find(title) ?: return title to emptyList()
@@ -108,7 +111,18 @@ object FilenameParser {
                 if (!loose.equals(titlePart, ignoreCase = true) && loose.isNotBlank())
                     add(candidate(loose, primary, MatchStrategy.FILENAME_LOOSE))
 
+                // Collapsed artist (alphanumerics only, no spaces) for stylized names whose decorations get
+                // mangled on disk: "_UICIDEBOY_" / "$uicideboy$" -> "uicideboy", "P!nk" -> "pnk", "deadmau5".
+                // LRCLib indexes these as one token, so a spaced/decorated query misses them entirely.
+                val collapsed = collapse(artistPart)
+                if (collapsed.length >= 3 && collapsed != artistPart.lowercase())
+                    add(candidate(titlePart, collapsed, MatchStrategy.FILENAME_PRIMARY_ARTIST))
+
                 add(candidate(artistPart, titlePart, MatchStrategy.FILENAME_TITLE_ARTIST)) // reversed
+
+                // Pure title-only ("Loot"): lets the provider's title search + duration tiebreak find the track
+                // when the artist string can't be matched at all.
+                add(candidate(titlePart, null, MatchStrategy.FILENAME_TITLE_ONLY))
             }
             add(candidate(cleaned, null, MatchStrategy.FILENAME_TITLE_ONLY))
             val loosePlain = loosenTitle(cleaned)

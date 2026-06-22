@@ -96,7 +96,11 @@ fun SharedTransitionScope.SongCard(
             }
             Spacer(modifier = Modifier.width(2.dp))
             Column(
-                modifier = Modifier.padding(12.dp),
+                // weight(1f) gives the text the full remaining width so a long artist isn't clipped to a
+                // narrow column (marquee/ellipsis then operates over the whole card width).
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(12.dp),
                 verticalArrangement = Arrangement.Top
             ) {
                 AnimatedText(

@@ -63,7 +63,9 @@ class HomeViewModel(
         songMatchStatus[song.filePath]?.state ?: LyricState.NO_LYRICS
 
     private fun songHasLyrics(song: Song): Boolean = when (lyricStateFor(song)) {
-        LyricState.HAS_LYRICS, LyricState.SYNCED, LyricState.REVIEW, LyricState.UNSYNCED -> true
+        // UNSYNCED (plain .lrc, no timestamps) deliberately counts as "no lyrics": it won't scroll with the
+        // music, so it stays red/searchable until replaced with a synced version.
+        LyricState.HAS_LYRICS, LyricState.SYNCED, LyricState.REVIEW -> true
         else -> false
     }
 
@@ -137,6 +139,28 @@ class HomeViewModel(
 
     fun updateAllSongs(context: Context, sortBy: SortValues, sortOrder: SortOrders) = viewModelScope.launch(Dispatchers.IO) {
         allSongs = getAllSongs(context, sortBy, sortOrder)
+    }
+
+    /**
+     * Re-derives lyric state from disk for all loaded songs (off the main thread). Called when Home resumes so a
+     * row reflects lyrics just saved on the fetch screen, or a sidecar .lrc added/removed outside the app.
+     * No-op while a batch is running so it can't clobber in-flight FETCHING/SYNCED states.
+     */
+    fun refreshLyricStatesFromDisk() {
+        if (isRefreshing) return
+        val songs = cachedSongs ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val results = LrcPrescan.scan(songs.mapNotNull { it.filePath })
+            results.forEach { (path, r) ->
+                songMatchStatus[path] = SongMatchInfo(
+                    when (r) {
+                        PrescanResult.ALREADY_SYNCED, PrescanResult.RENAMED_FROM_PRIVATE -> LyricState.HAS_LYRICS
+                        PrescanResult.ALREADY_PRESENT_UNSYNCED -> LyricState.UNSYNCED
+                        PrescanResult.NONE -> LyricState.NO_LYRICS
+                    }
+                )
+            }
+        }
     }
 
     /**

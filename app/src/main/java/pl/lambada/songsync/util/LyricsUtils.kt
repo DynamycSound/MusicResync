@@ -246,16 +246,19 @@ suspend fun downloadLyrics(
         val path = song.filePath
         if (path != null) onSongResult(path, SongMatchInfo(LyricState.FETCHING))
 
-        // When skipExisting is on, songs that already have lyrics are left untouched (and reported as such).
-        if (skipExisting && song.filePath.toLrcFile()?.exists() == true) {
-            val st = if (LrcPrescan.isSyncedLrc(song.filePath.toLrcFile()!!)) LyricState.HAS_LYRICS else LyricState.UNSYNCED
-            if (path != null) onSongResult(path, SongMatchInfo(st))
+        // skipExisting only skips songs that already have *synced* lyrics. A plain (unsynced) .lrc is treated
+        // as missing -- we fetch a synced version and overwrite it -- so "Has Lyrics" never lies.
+        val existingLrc = song.filePath.toLrcFile()
+        val hasSynced = existingLrc?.exists() == true && LrcPrescan.isSyncedLrc(existingLrc)
+        if (skipExisting && hasSynced) {
+            if (path != null) onSongResult(path, SongMatchInfo(LyricState.HAS_LYRICS))
             successCount++
             onProgressUpdate(successCount, noLyricsCount, failedCount)
             return@forEach
         }
 
-        val info = matchAndSaveSong(song, viewModel, context, matcher, config, correctMetadata, overwriteExisting = !skipExisting, saveLrc = saveLrc, embedLyrics = embedLyrics)
+        // Always overwrite once we've decided to process: replaces a stale/plain .lrc with the synced result.
+        val info = matchAndSaveSong(song, viewModel, context, matcher, config, correctMetadata, overwriteExisting = true, saveLrc = saveLrc, embedLyrics = embedLyrics)
 
         when (info.state) {
             LyricState.SYNCED, LyricState.REVIEW, LyricState.HAS_LYRICS, LyricState.UNSYNCED -> {

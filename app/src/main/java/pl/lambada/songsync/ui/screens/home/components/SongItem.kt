@@ -198,12 +198,14 @@ fun LyricStatusBadge(
     val tint = when (state) {
         LyricState.SYNCED, LyricState.HAS_LYRICS -> Color(0xFF2E7D32) // green: has synced lyrics
         LyricState.REVIEW -> Color(0xFFF9A825)                        // amber: verify
-        LyricState.UNSYNCED -> Color(0xFF2E7D32)                      // has (plain) lyrics -> still green
+        // Plain (unsynced) .lrc is treated as missing: red, so the user knows it still needs real synced lyrics.
+        LyricState.UNSYNCED -> Color(0xFFC62828)
         LyricState.NO_LYRICS, LyricState.FAILED -> Color(0xFFC62828)  // red: no lyrics
         LyricState.FETCHING -> Color(0xFF9E9E9E)
     }
     val animatedTint by animateColorAsState(tint, label = "noteColor")
     val description = when (state) {
+        LyricState.UNSYNCED -> "Unsynced lyrics — needs syncing"
         LyricState.NO_LYRICS, LyricState.FAILED -> "No lyrics"
         else -> "Has lyrics"
     }

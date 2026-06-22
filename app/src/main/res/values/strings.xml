@@ -197,6 +197,10 @@
     </plurals>
 
     <string name="more_options">More options</string>
+    <string name="adjust_timing_preview">Adjust timing &amp; preview</string>
+    <string name="saved_as_lrc">Saved as .lrc ✓</string>
+    <string name="embedded_lyrics">Embedded ✓</string>
+    <string name="sync_saved">Sync saved</string>
 
     <!-- Spotify rotating-secret status (Settings) -->
     <string name="spotify_secrets_title">Spotify security keys</string>

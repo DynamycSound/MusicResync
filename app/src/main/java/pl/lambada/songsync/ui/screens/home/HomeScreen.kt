@@ -32,6 +32,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -88,6 +89,13 @@ fun HomeScreen(
         viewModel.updateAllSongs(context, viewModel.userSettingsController.sortBy, viewModel.userSettingsController.sortOrder)
     }
 
+    // Re-derive row colours from disk whenever Home comes back to the foreground, so a song lyric'd on the
+    // fetch screen (or a .lrc added/removed outside the app) is reflected without a manual refresh.
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshLyricStatesFromDisk()
+        onPauseOrDispose { }
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -120,26 +128,8 @@ fun HomeScreen(
                 )
             }
         },
-        floatingActionButton = {
-            with(sharedTransitionScope) {
-                FloatingActionButton(
-                    modifier = Modifier
-                        .skipToLookaheadSize()
-                        .sharedBounds(
-                            sharedContentState = rememberSharedContentState(key = "fab"),
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            boundsTransform = SearchFABBoundsTransform,
-                            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
-                        ),
-                    onClick = { navController.navigate(LyricsFetchScreen()) }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search lyrics"
-                    )
-                }
-            }
-        },
+        // The standalone "empty search" FAB was removed: every song row already routes to search/play on tap,
+        // so a blank manual-search entry point is redundant.
         bottomBar = { Spacer(Modifier.navigationBarsPadding()) } // fixing broken edge to edge here
     ) { paddingValues ->
         Crossfade(viewModel.allSongs == null, label = "") { loading ->

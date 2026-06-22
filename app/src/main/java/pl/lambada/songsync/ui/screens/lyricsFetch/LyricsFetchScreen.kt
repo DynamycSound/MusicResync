@@ -43,6 +43,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import pl.lambada.songsync.R
+import pl.lambada.songsync.ui.PlayerScreen
 import pl.lambada.songsync.ui.components.ProvidersDropdownMenu
 import pl.lambada.songsync.ui.screens.lyricsFetch.components.CloudProviderTitle
 import pl.lambada.songsync.ui.screens.lyricsFetch.components.FailedDialogue
@@ -222,6 +223,24 @@ fun SharedTransitionScope.LyricsFetchScreen(
                                 context,
                                 context.getString(R.string.lyrics_copied_to_clipboard),
                             )
+                        },
+                        // Only local songs can be played back, so "Adjust timing" is offered for those: save the
+                        // .lrc first (so the player has something to read) then open the synced player.
+                        onAdjustTiming = viewModel.source?.let { src ->
+                            { lyrics: String ->
+                                val path = src.filePath.replace(".nowplaying", "")
+                                viewModel.saveLyricsToFile(
+                                    lyrics, queryState.song, path, context,
+                                    context.getString(R.string.generated_using)
+                                )
+                                navController.navigate(
+                                    PlayerScreen(
+                                        filePath = path,
+                                        songName = queryState.song.songName ?: src.songName,
+                                        artists = queryState.song.artistName ?: src.artists,
+                                    )
+                                )
+                            }
                         },
                         openUri = uriHandler::openUri,
                         lyricsFetchState = viewModel.lyricsFetchState,
