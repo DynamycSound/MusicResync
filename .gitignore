@@ -19,7 +19,8 @@ local.properties
 /snaptube/
 
 
-# Local release signing key — never commit
-release-keystore.jks
+# Disposable self-signed key used to sign the sideloaded release APK (NOT a Play Store key) — committed on
+# purpose so CI can produce stable, in-place-upgradeable releases with no secrets. Safe to rotate.
+# release-keystore.jks  (intentionally tracked)
 # Built release APKs
 *.apk

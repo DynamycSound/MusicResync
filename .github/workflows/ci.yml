@@ -38,11 +38,12 @@ jobs:
 
   build-release:
     if: github.event_name == 'push'
-    name: Build signed release APK
+    name: Build & publish signed release APK
     runs-on: ubuntu-latest
 
+    # contents: write lets this job create/update the GitHub Release (using the auto-provided GITHUB_TOKEN).
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout code
@@ -54,28 +55,38 @@ jobs:
           distribution: "zulu"
           java-version: "17"
 
-      # MusicResync is sideloaded (not a Play Store app), so the release APK only needs *a* signature to be
-      # installable. We mint a throwaway keystore here, which keeps CI green with zero secrets. The canonical
-      # release the maintainer distributes is built locally with the stable keystore (see project notes); if you
-      # ever want CI to produce in-place-upgradeable APKs, swap this step for a keystore decoded from a secret.
-      - name: Generate signing key
-        run: |
-          keytool -genkeypair -v -keystore release.keystore \
-            -alias musicresync -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass musicresync -keypass musicresync \
-            -dname "CN=MusicResync, OU=DynamycSound, O=DynamycSound, C=US"
-          {
-            echo "RELEASE_STORE_FILE=$(realpath release.keystore)"
-            echo "RELEASE_STORE_PASSWORD=musicresync"
-            echo "RELEASE_KEY_ALIAS=musicresync"
-            echo "RELEASE_KEY_PASSWORD=musicresync"
-          } >> "$GITHUB_ENV"
-
+      # Signs with the disposable, repo-committed keystore (release-keystore.jks) so every release shares one
+      # signature and installs as an in-place upgrade — no secrets, no manual steps. This is NOT the Play Store
+      # key (that's separate and Google-managed); rotate this key freely if ever needed.
       - name: Build release APK
+        env:
+          RELEASE_STORE_FILE: ${{ github.workspace }}/release-keystore.jks
+          RELEASE_STORE_PASSWORD: MusicResync2026!
+          RELEASE_KEY_ALIAS: musicresync
+          RELEASE_KEY_PASSWORD: MusicResync2026!
         run: ./gradlew assembleRelease
 
-      - name: Upload release APK
+      - name: Upload release APK (build artifact)
         uses: actions/upload-artifact@v4
         with:
           name: app-release.apk
           path: ./app/build/outputs/apk/release/app-release.apk
+
+      # Auto-publish a GitHub Release for the current versionName. New version -> a fresh release is created;
+      # same version pushed again -> the APK on the existing release is refreshed. Fully automatic: bump
+      # versionName in app/build.gradle.kts, push, and the release appears with the signed APK attached.
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(grep -E 'versionName *=' app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "versionName = $VERSION"
+          cp app/build/outputs/apk/release/app-release.apk "MusicResync-v$VERSION.apk"
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" "MusicResync-v$VERSION.apk" --clobber
+          else
+            gh release create "v$VERSION" "MusicResync-v$VERSION.apk" \
+              --title "MusicResync v$VERSION" \
+              --target "$GITHUB_SHA" \
+              --generate-notes
+          fi
