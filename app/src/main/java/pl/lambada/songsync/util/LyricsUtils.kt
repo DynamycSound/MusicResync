@@ -11,10 +11,12 @@ import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.kyant.taglib.Picture
 import com.kyant.taglib.TagLib
 import pl.lambada.songsync.R
 import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
 import pl.lambada.songsync.data.remote.lyrics_providers.MatchConfig
+import pl.lambada.songsync.data.remote.lyrics_providers.ScoredHit
 import pl.lambada.songsync.data.remote.lyrics_providers.SmartLyricsMatcher
 import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.domain.model.SongInfo
@@ -27,8 +29,17 @@ import pl.lambada.songsync.util.matching.LrcPrescan
 import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.matching.MatchTier
 import pl.lambada.songsync.util.matching.SongMatchInfo
+import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.io.FileNotFoundException
+import kotlin.coroutines.coroutineContext
+
+/**
+ * Normalizes every line ending to CRLF. Many external LRC players (and several stock Android music apps)
+ * require `\r\n` and render an `\n`-only file as a single unsynced line — which is exactly the "O PANA!" bug
+ * (it looked fine in our player, which reads with lineSequence(), but broke everywhere else). Idempotent.
+ */
+fun String.toCrlf(): String = replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
 
 fun generateLrcContent(
     song: SongInfo,
@@ -41,11 +52,11 @@ fun generateLrcContent(
     val offsetStr = if (!directOffset) "[offset:${offsetSign}${offset}]\n" else ""
     val lyrics = if (directOffset && offset != 0) applyOffsetToLyrics(lyrics, offset) else lyrics
 
-    return "[ti:${song.songName}]\n" +
+    return ("[ti:${song.songName}]\n" +
         "[ar:${song.artistName}]\n" +
         offsetStr +
         "[by:$generatedUsingString]\n" +
-        lyrics
+        lyrics).toCrlf()
 }
 
 fun newLyricsFilePath(filePath: String?, song: SongInfo): File {
@@ -67,7 +78,7 @@ fun writeLyricsToFile(
     sdCardPath: String?
 ) {
     try {
-        file?.writeText(lrcContent)
+        file?.writeText(lrcContent.toCrlf())
     } catch (e: FileNotFoundException) {
         handleFileNotFoundException(context, song, file, lrcContent, sdCardPath)
     }
@@ -102,7 +113,7 @@ fun handleFileNotFoundException(
         }
         sdCardFiles?.createFile("text/lrc", file.name)?.let {
             val outputStream = context.contentResolver.openOutputStream(it.uri)
-            outputStream?.write(lrc.toByteArray())
+            outputStream?.write(lrc.toCrlf().toByteArray())
             outputStream?.close()
         }
     } else {
@@ -152,7 +163,7 @@ fun embedLyricsInFile(
 
         TagLib.savePropertyMap(
             fd.dup().detachFd(),
-            propertyMap = metadata.propertyMap.apply { put("LYRICS", arrayOf(lyrics)) }
+            propertyMap = metadata.propertyMap.apply { put("LYRICS", arrayOf(lyrics.toCrlf())) }
         )
 
         true
@@ -161,6 +172,27 @@ fun embedLyricsInFile(
         false
     } catch (e: Exception) {
         Log.e("LyricsFetchViewModel", "Error embedding lyrics: ${e.message}")
+        false
+    }
+}
+
+/**
+ * Downloads [imageUrl] and writes it into the audio file as the front-cover picture (replacing any existing
+ * art) via TagLib. Used by the thumbnail picker. Network + tag write — call off the main thread. Best-effort:
+ * returns false on any failure instead of throwing.
+ */
+fun embedCoverInFile(context: Context, filePath: String, imageUrl: String): Boolean {
+    return try {
+        val bytes = java.net.URL(imageUrl).openStream().use { it.readBytes() }
+        if (bytes.isEmpty()) return false
+        val mime = if (imageUrl.substringBefore('?').endsWith(".png", ignoreCase = true)) "image/png" else "image/jpeg"
+
+        val fd = getFileDescriptorFromPath(context, filePath, mode = "w")
+            ?: throw IllegalStateException("File descriptor is null")
+        val picture = Picture(bytes, "Cover", "Front Cover", mime)
+        TagLib.savePictures(fd.dup().detachFd(), arrayOf(picture))
+    } catch (e: Exception) {
+        Log.e("MusicResync", "Error embedding cover: ${e.message}")
         false
     }
 }
@@ -223,6 +255,7 @@ suspend fun downloadLyrics(
     autoTryProviders: Boolean = true,
     saveLrc: Boolean = true,
     embedLyrics: Boolean = false,
+    addUnsyncedFallback: Boolean = false,
     onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int) -> Unit,
     onSongResult: (filePath: String, info: SongMatchInfo) -> Unit = { _, _ -> },
     onDownloadComplete: () -> Unit,
@@ -243,6 +276,10 @@ suspend fun downloadLyrics(
     )
 
     songs.forEach { song ->
+        // Stop promptly when the user presses Stop: the batch coroutine is cancelled and this throws
+        // CancellationException between songs, so no further lyrics are saved.
+        coroutineContext.ensureActive()
+
         val path = song.filePath
         if (path != null) onSongResult(path, SongMatchInfo(LyricState.FETCHING))
 
@@ -258,7 +295,7 @@ suspend fun downloadLyrics(
         }
 
         // Always overwrite once we've decided to process: replaces a stale/plain .lrc with the synced result.
-        val info = matchAndSaveSong(song, viewModel, context, matcher, config, correctMetadata, overwriteExisting = true, saveLrc = saveLrc, embedLyrics = embedLyrics)
+        val info = matchAndSaveSong(song, viewModel, context, matcher, config, correctMetadata, overwriteExisting = true, saveLrc = saveLrc, embedLyrics = embedLyrics, addUnsyncedFallback = addUnsyncedFallback)
 
         when (info.state) {
             LyricState.SYNCED, LyricState.REVIEW, LyricState.HAS_LYRICS, LyricState.UNSYNCED -> {
@@ -295,6 +332,7 @@ suspend fun matchAndSaveSong(
     overwriteExisting: Boolean = false,
     saveLrc: Boolean = true,
     embedLyrics: Boolean = false,
+    addUnsyncedFallback: Boolean = false,
 ): SongMatchInfo {
     val lrcFile = song.filePath.toLrcFile()
 
@@ -318,23 +356,63 @@ suspend fun matchAndSaveSong(
             return SongMatchInfo(LyricState.FAILED)
         }
 
-    val best = hits.firstOrNull()
-    if (best == null || best.tier == MatchTier.REJECT) {
+    val topForReport = hits.firstOrNull()
+    val nonRejected = hits.filter { it.tier != MatchTier.REJECT }
+
+    // Fall through every acceptable hit (highest confidence first) until one actually yields synced lyrics. A
+    // provider can match the metadata yet have no synced body ("found a match but no synced lyrics"); rather
+    // than give up we try the next hit/provider.
+    var chosen: ScoredHit? = null
+    var lyrics: String? = null
+    for (hit in nonRejected) {
+        coroutineContext.ensureActive()
+        val l = runCatching { matcher.fetchLyrics(hit, config) }.getOrNull()
+        if (!l.isNullOrBlank()) { chosen = hit; lyrics = l; break }
+    }
+
+    // No synced lyrics from the normal providers. Try the last resort, then optionally plain lyrics.
+    if (chosen == null || lyrics == null) {
+        // Last resort: canonicalize the (likely garbled) metadata via iTunes/Deezer and retry LRCLib under the
+        // clean name. This rescues weird files the providers missed, and can even recover SYNCED lyrics.
+        val lr = runCatching { matcher.lastResort(local, candidates, config) }.getOrNull()
+        if (lr != null && lr.synced) {
+            val songInfo = SongInfo(songName = lr.title, artistName = lr.artist)
+            val lrcContent = formatLyrics(songInfo, lr.lyrics, context, viewModel.userSettingsController.directlyModifyTimestamps)
+            val saved = runCatching {
+                if (saveLrc || !embedLyrics) writeLyricsToFile(lrcFile, lrcContent, context, song, viewModel.userSettingsController.sdCardPath)
+                if (embedLyrics) embedLyricsInFile(context, song.filePath ?: error("File path is null"), lrcContent)
+            }.isSuccess
+            // Canonical match is fuzzy -> REVIEW (not auto-accept) so the user can verify timing.
+            if (saved) return SongMatchInfo(LyricState.REVIEW, topForReport?.confidence?.percent(), Providers.LRCLIB, lr.title, lr.artist)
+        }
+
+        if (addUnsyncedFallback) {
+            val plain = runCatching { matcher.fetchPlainLyrics(local, candidates, config) }.getOrNull()
+            // Use LRCLib's plain lyrics if any; otherwise the last resort's plain body.
+            val plainBody = plain?.plainLyrics ?: lr?.takeUnless { it.synced }?.lyrics
+            if (plainBody != null) {
+                val pTitle = plain?.result?.title ?: lr?.title
+                val pArtist = plain?.result?.artist ?: lr?.artist
+                val songInfo = SongInfo(songName = pTitle, artistName = pArtist)
+                val lrcContent = formatLyrics(songInfo, plainBody, context, viewModel.userSettingsController.directlyModifyTimestamps)
+                val saved = runCatching {
+                    if (saveLrc || !embedLyrics) writeLyricsToFile(lrcFile, lrcContent, context, song, viewModel.userSettingsController.sdCardPath)
+                    if (embedLyrics) embedLyricsInFile(context, song.filePath ?: error("File path is null"), lrcContent)
+                }.isSuccess
+                if (saved) return SongMatchInfo(LyricState.UNSYNCED, topForReport?.confidence?.percent(), plain?.provider ?: Providers.LRCLIB, pTitle, pArtist)
+            }
+        }
         return SongMatchInfo(
             LyricState.NO_LYRICS,
-            confidencePercent = best?.confidence?.percent(),
-            provider = best?.provider,
-            matchedTitle = best?.result?.title,
-            matchedArtist = best?.result?.artist,
-            durationMatched = best?.confidence?.durationMatched ?: false,
+            confidencePercent = topForReport?.confidence?.percent(),
+            provider = topForReport?.provider,
+            matchedTitle = topForReport?.result?.title,
+            matchedArtist = topForReport?.result?.artist,
+            durationMatched = topForReport?.confidence?.durationMatched ?: false,
         )
     }
 
-    val lyrics = runCatching { matcher.fetchLyrics(best, config) }.getOrNull()
-    if (lyrics.isNullOrBlank()) {
-        return SongMatchInfo(LyricState.NO_LYRICS, best.confidence.percent(), best.provider, best.result.title, best.result.artist, best.confidence.durationMatched)
-    }
-
+    val best = chosen
     val songInfo = SongInfo(songName = best.result.title, artistName = best.result.artist)
     val lrcContent = formatLyrics(songInfo, lyrics, context, viewModel.userSettingsController.directlyModifyTimestamps)
 
@@ -355,7 +433,14 @@ suspend fun matchAndSaveSong(
     // tags -- but only for confident (auto-accept) matches, so we never overwrite tags from a shaky guess.
     if (correctMetadata && best.tier == MatchTier.AUTO_ACCEPT && song.filePath != null) {
         runCatching {
-            writeCorrectedTags(context, song.filePath, best.result.title, best.result.artist)
+            // Writes BOTH the corrected TITLE and ARTIST (not just the artist) into the audio tags.
+            val ok = writeCorrectedTags(context, song.filePath, best.result.title, best.result.artist)
+            if (ok) {
+                // Refresh the row instantly so it doesn't keep showing the stale value (e.g. "Unknown")...
+                viewModel.refreshSongMetadata(song.filePath, best.result.title, best.result.artist)
+                // ...and tell MediaStore to re-read the file so the new tags survive the next cold start too.
+                android.media.MediaScannerConnection.scanFile(context, arrayOf(song.filePath), null, null)
+            }
         }.onFailure { Log.e("MusicResync", "tag correction failed for ${song.filePath}: ${it.message}") }
     }
 
@@ -401,7 +486,7 @@ fun saveToExternalPath(
     sdCardFiles?.listFiles()?.firstOrNull { it.name == fileName }?.delete()
     sdCardFiles?.createFile("text/lrc", fileName)?.let {
         context.contentResolver.openOutputStream(it.uri)?.use { outputStream ->
-            outputStream.write(lrc.toByteArray())
+            outputStream.write(lrc.toCrlf().toByteArray())
         }
     }
 }

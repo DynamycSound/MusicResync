@@ -32,6 +32,7 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
     var autoTryProviders by rememberSaveable { mutableStateOf(true) }
     var saveLrc by rememberSaveable { mutableStateOf(true) }            // default ON (Samsung-compatible)
     var embedLyrics by rememberSaveable { mutableStateOf(false) }       // default OFF
+    var addUnsyncedFallback by rememberSaveable { mutableStateOf(false) } // default OFF (synced-only)
     val count = successCount + failedCount + noLyricsCount
     val total = songs.size
     val songsWithoutLyrics = songs.count {
@@ -42,6 +43,12 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
     val context = LocalContext.current
     val startBatchDownload = remember {
         {
+            // Always restart the progress from zero. rememberSaveable keeps the counters across the dialog being
+            // dismissed/reopened, which made a fresh run look like it was resuming from where it was cancelled.
+            // The actual fetch (with skipExisting) already begins at the first song without synced lyrics.
+            successCount = 0
+            noLyricsCount = 0
+            failedCount = 0
             viewModel.batchDownloadLyrics(
                 context,
                 correctMetadata = correctMetadata,
@@ -49,6 +56,7 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
                 autoTryProviders = autoTryProviders,
                 saveLrc = saveLrc,
                 embedLyrics = embedLyrics,
+                addUnsyncedFallback = addUnsyncedFallback,
                 onProgressUpdate = { newSuccessCount, newNoLyricsCount, newFailedCount ->
                     successCount = newSuccessCount
                     noLyricsCount = newNoLyricsCount
@@ -61,7 +69,12 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
     }
 
     when (uiState) {
-        UiState.Cancelled -> onDone()
+        UiState.Cancelled -> {
+            // Actually stop the running batch (not just close the dialog) so it can't keep saving in the
+            // background after the user pressed Stop.
+            viewModel.cancelBatch()
+            onDone()
+        }
         UiState.Warning -> BatchDownloadWarningDialog(
             songsToProcess = songsToProcess,
             onConfirm = {
@@ -83,6 +96,8 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
             onSkipExistingChangeRequest = { skipExisting = it },
             autoTryProviders = autoTryProviders,
             onAutoTryProvidersChangeRequest = { autoTryProviders = it },
+            addUnsyncedFallback = addUnsyncedFallback,
+            onAddUnsyncedFallbackChangeRequest = { addUnsyncedFallback = it },
         )
 
         UiState.LegacyPrompt -> LegacyPromptDialog(

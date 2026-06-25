@@ -92,6 +92,9 @@ fun HomeScreen(
     // Re-derive row colours from disk whenever Home comes back to the foreground, so a song lyric'd on the
     // fetch screen (or a .lrc added/removed outside the app) is reflected without a manual refresh.
     LifecycleResumeEffect(Unit) {
+        // Fast path first: reflect anything the player/fetch screen just wrote to the cache (e.g. lyrics removed
+        // -> red note, offset saved -> green) with no disk scan, then verify against disk in the background.
+        viewModel.reseedFromCache()
         viewModel.refreshLyricStatesFromDisk()
         onPauseOrDispose { }
     }
@@ -161,6 +164,11 @@ fun LoadingScreen() {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         CircularProgressIndicator()
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = stringResource(R.string.please_wait),
+            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 

@@ -3,8 +3,11 @@ package pl.lambada.songsync.data.remote.lyrics_providers
 import android.util.Log
 import kotlinx.coroutines.delay
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
+import pl.lambada.songsync.data.remote.lyrics_providers.others.LastResortAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.NeteaseAPI
 import pl.lambada.songsync.domain.model.SongInfo
+import pl.lambada.songsync.domain.model.lyrics_providers.others.LRCLibResponse
+import kotlin.math.abs
 import pl.lambada.songsync.util.Providers
 import pl.lambada.songsync.util.matching.ConfidenceBreakdown
 import pl.lambada.songsync.util.matching.ConfidenceScorer
@@ -53,6 +56,8 @@ class SmartLyricsMatcher(
     private val netease: NeteaseAPI = NeteaseAPI(),
     /** Optional: enables Apple/Musixmatch/Spotify/QQ as scored fallbacks in the single-song flow. */
     private val providerService: LyricsProviderService? = null,
+    /** Internal "last resort" canonicalizer (iTunes/Deezer) — not a user-facing provider. */
+    private val lastResortApi: LastResortAPI = LastResortAPI(),
 ) {
 
     /**
@@ -105,6 +110,99 @@ class SmartLyricsMatcher(
         val ranked = hits.values.sortedByDescending { it.confidence.score }
         if (ranked.isEmpty()) log("  [no match] nothing found across ${config.providerOrder.joinToString { it.displayName }}")
         return ranked
+    }
+
+    /** A best-effort PLAIN (unsynced) lyrics hit, used only when no provider has synced lyrics. */
+    data class PlainHit(val provider: Providers, val result: ProviderResult, val plainLyrics: String)
+
+    /**
+     * Best-effort PLAIN (unsynced) lyrics from LRCLib, used as a fallback when no provider returned synced
+     * lyrics and the user opted in. Scores candidates the same way as the synced search so a wrong result is
+     * still rejected; returns the best non-rejected plain match or null.
+     */
+    suspend fun fetchPlainLyrics(
+        local: LocalTrack,
+        candidates: List<QueryCandidate>,
+        config: MatchConfig = MatchConfig(),
+        log: (String) -> Unit = { Log.i(TAG, it) },
+    ): PlainHit? {
+        for (cand in candidates) {
+            val query = cand.asSearchString()
+            if (query.isBlank()) continue
+            val results = runCatching {
+                withRetry(config.maxRetries) { lrcLib.searchCandidates(query) }
+            }.onFailure { log("  [LRCLib/plain] search failed: ${it.message}") }.getOrDefault(emptyList())
+
+            val best = results
+                .filter { !it.plainLyrics.isNullOrBlank() }
+                .map { r ->
+                    val pr = ProviderResult(r.trackName, r.artistName, r.duration, r.albumName, false)
+                    Triple(pr, scoreFor(local, pr, cand.strategy), r.plainLyrics!!)
+                }
+                .sortedByDescending { it.second.score }
+                .firstOrNull { it.second.tier != MatchTier.REJECT }
+
+            if (best != null) {
+                log("  [plain fallback] ${best.first.title} - ${best.first.artist} (${best.second.percent()}%)")
+                return PlainHit(Providers.LRCLIB, best.first, best.third)
+            }
+            delay(config.requestDelayMs)
+        }
+        return null
+    }
+
+    /** A rescued result from the last-resort path: lyrics (synced or plain) under a canonical title/artist. */
+    data class LastResortHit(
+        val title: String,
+        val artist: String,
+        val lyrics: String,
+        val synced: Boolean,
+        val coverUrl: String? = null,
+    )
+
+    /**
+     * The genuine last resort, tried only after every real provider failed. The usual reason for that failure is
+     * a garbled filename whose query never matched anything; here we canonicalize it through iTunes/Deezer
+     * ("🔥 Ed Sheeran - 🍕Shape of You🍕 [FREE]" -> "Ed Sheeran / Shape of You") and re-query LRCLib under the
+     * clean name, which routinely finds the track that was invisible before. Prefers synced lyrics, falls back to
+     * plain. Because the local tags are (by definition) unreliable here, we don't reject on them — we lean on
+     * duration when we have it and otherwise trust the canonical top hit. Returns null if nothing turns up.
+     */
+    suspend fun lastResort(
+        local: LocalTrack,
+        candidates: List<QueryCandidate>,
+        config: MatchConfig = MatchConfig(),
+        log: (String) -> Unit = { Log.i(TAG, it) },
+    ): LastResortHit? {
+        val query = candidates.map { it.asSearchString() }.firstOrNull { it.isNotBlank() } ?: return null
+        val metas = runCatching { lastResortApi.canonicalize(query) }
+            .onFailure { log("  [last-resort] canonicalize failed: ${it.message}") }
+            .getOrDefault(emptyList())
+        if (metas.isEmpty()) return null
+
+        for (meta in metas) {
+            val results = runCatching { lrcLib.searchCandidates("${meta.artist} ${meta.title}") }
+                .getOrDefault(emptyList())
+
+            // When we know the local duration, prefer the closest-length hit; otherwise the canonical top result.
+            fun pick(predicate: (LRCLibResponse) -> Boolean): LRCLibResponse? {
+                val cands = results.filter(predicate)
+                if (cands.isEmpty()) return null
+                val dur = local.durationSec
+                return if (dur != null) cands.minByOrNull { abs(it.duration - dur) } else cands.first()
+            }
+
+            pick { !it.syncedLyrics.isNullOrBlank() }?.let {
+                log("  [last-resort] synced via ${meta.artist} - ${meta.title}")
+                return LastResortHit(it.trackName, it.artistName, it.syncedLyrics!!, true, meta.coverUrl)
+            }
+            pick { !it.plainLyrics.isNullOrBlank() }?.let {
+                log("  [last-resort] plain via ${meta.artist} - ${meta.title}")
+                return LastResortHit(it.trackName, it.artistName, it.plainLyrics!!, false, meta.coverUrl)
+            }
+            delay(config.requestDelayMs)
+        }
+        return null
     }
 
     /** Resolves the synced LRC body for a chosen hit (inline for LRCLib/generic, second fetch for Netease). */

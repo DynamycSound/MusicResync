@@ -15,10 +15,12 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,10 +50,15 @@ fun LyricsSuccessContent(
     onSaveLyrics: () -> Unit,
     onEmbedLyrics: () -> Unit,
     onAdjustTiming: (() -> Unit)? = null,
+    /** Fetches cover candidates for the thumbnail picker; null for non-local sources (no file to write to). */
+    onRequestCovers: (suspend () -> List<String>)? = null,
+    onPickCover: (String) -> Unit = {},
+    hasCover: Boolean? = null,
 ) {
     // Reset the "saved" chips whenever a different result is shown.
     var savedLrc by remember(lyrics) { mutableStateOf(false) }
     var embedded by remember(lyrics) { mutableStateOf(false) }
+    var showThumbnailPicker by remember { mutableStateOf(false) }
 
     Column {
         if (onAdjustTiming != null) {
@@ -82,6 +89,23 @@ fun LyricsSuccessContent(
                 onClick = { onEmbedLyrics(); embedded = true },
                 modifier = Modifier.weight(1f),
             )
+        }
+
+        // Thumbnail picker: lets the user attach album art to the file (label reflects whether one exists).
+        if (onRequestCovers != null) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { showThumbnailPicker = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.Image, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(if (hasCover == false) R.string.add_thumbnail else R.string.change_thumbnail))
+            }
+            if (showThumbnailPicker) {
+                ThumbnailPickerDialog(
+                    onRequestCovers = onRequestCovers,
+                    onPick = onPickCover,
+                    onDismiss = { showThumbnailPicker = false },
+                )
+            }
         }
 
         Spacer(Modifier.height(8.dp))

@@ -16,8 +16,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -75,7 +77,10 @@ fun SharedTransitionScope.LyricsFetchScreen(
     var expandedProviders by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        if (viewModel.source != null) viewModel.loadSongInfo(context)
+        if (viewModel.source != null) {
+            viewModel.loadSongInfo(context)
+            viewModel.checkLocalCover(context)
+        }
     }
 
     Scaffold(
@@ -128,6 +133,10 @@ fun SharedTransitionScope.LyricsFetchScreen(
                         },
                     )
                 },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
                 scrollBehavior = scrollBehavior
             )
         }
@@ -224,20 +233,18 @@ fun SharedTransitionScope.LyricsFetchScreen(
                                 context.getString(R.string.lyrics_copied_to_clipboard),
                             )
                         },
-                        // Only local songs can be played back, so "Adjust timing" is offered for those: save the
-                        // .lrc first (so the player has something to read) then open the synced player.
+                        // Only local songs can be played back, so "Adjust timing" is offered for those. We do NOT
+                        // save here — the lyrics are passed to the player and written only when the user presses
+                        // the checkmark there.
                         onAdjustTiming = viewModel.source?.let { src ->
                             { lyrics: String ->
                                 val path = src.filePath.replace(".nowplaying", "")
-                                viewModel.saveLyricsToFile(
-                                    lyrics, queryState.song, path, context,
-                                    context.getString(R.string.generated_using)
-                                )
                                 navController.navigate(
                                     PlayerScreen(
                                         filePath = path,
                                         songName = queryState.song.songName ?: src.songName,
                                         artists = queryState.song.artistName ?: src.artists,
+                                        lyrics = viewModel.buildLrc(lyrics, queryState.song, context),
                                     )
                                 )
                             }
@@ -248,8 +255,43 @@ fun SharedTransitionScope.LyricsFetchScreen(
                         disableMarquee = viewModel.userSettingsController.disableMarquee,
                         allowTryingAgain = true,
                         selectedProvider = viewModel.activeProvider,
-                        onExpandProvidersRequest = { expandedProviders = true },
+                        providerProbes = viewModel.providerProbes,
+                        onRetryProvider = { viewModel.retryProvider(it, context) },
+                        onRequestCovers = viewModel.source?.let { { viewModel.fetchCoverCandidates(queryState.song) } },
+                        onPickCover = { viewModel.embedCover(it, context) },
+                        hasCover = viewModel.localHasCover,
                     )
+
+                    is QueryStatus.SyncedNotFound -> {
+                        val plain = queryState.plainLyrics
+                        val plainSong = queryState.song
+                        Column(
+                            Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text(
+                                text = stringResource(R.string.no_synced_lyrics_found),
+                                style = MaterialTheme.typography.titleMedium,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            if (plain != null) {
+                                Button(onClick = {
+                                    viewModel.acceptPlainLyrics(plain, plainSong, context)
+                                    navController.popBackStack(navController.graph.startDestinationId, false)
+                                }) {
+                                    Text(stringResource(R.string.add_plain_lyrics))
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                            OutlinedButton(onClick = {
+                                viewModel.queryState = QueryStatus.NotSubmitted
+                            }) {
+                                Text(stringResource(R.string.cancel))
+                            }
+                        }
+                    }
 
                     is QueryStatus.Failed -> FailedDialogue(
                         onDismissRequest = { viewModel.queryState = QueryStatus.NotSubmitted },

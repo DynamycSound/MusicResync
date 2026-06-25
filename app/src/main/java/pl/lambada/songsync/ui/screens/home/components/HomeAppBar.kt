@@ -131,7 +131,11 @@ fun HomeAppBar(
                 scrolledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
             )
         } else {
-            TopAppBarDefaults.topAppBarColors()
+            // Match the (black) background instead of the default elevated grey that appears when scrolled.
+            TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+                scrolledContainerColor = MaterialTheme.colorScheme.surface,
+            )
         },
         scrollBehavior = scrollBehavior,
     )

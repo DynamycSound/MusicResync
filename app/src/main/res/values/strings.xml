@@ -19,6 +19,15 @@
     <string name="private_lrc_note">Snaptube downloads: a matching .lrc with a \"_private\" suffix is detected automatically and the suffix removed so players can see it — no fetch needed.</string>
     <string name="confidence_verify">Please verify</string>
     <string name="searching">Searching…</string>
+    <string name="please_wait">Please wait…</string>
+    <string name="no_synced_lyrics_found">No synced lyrics found for this song.</string>
+    <string name="add_plain_lyrics">Add plain lyrics</string>
+    <string name="add_unsynced_if_no_synced">Add unsynced lyrics if no synced is available</string>
+    <string name="change_thumbnail">Change thumbnail</string>
+    <string name="add_thumbnail">Add thumbnail</string>
+    <string name="thumbnail_saved">Thumbnail saved</string>
+    <string name="no_thumbnails_found">No thumbnails found for this song.</string>
+    <string name="pick_thumbnail">Pick a thumbnail</string>
     <string name="trying_provider">Trying %1$s…</string>
     <string name="this_may_take_a_minute">This can take a minute or two — we\'re trying multiple providers to find the best synced match.</string>
     <string name="remove_current_lyrics">Remove current lyrics</string>
@@ -69,6 +78,7 @@
     <string name="contributor">Contributor</string>
     <string name="developer">Developer</string>
     <string name="lead_developer">Lead developer</string>
+    <string name="original_project">Original project — SongSync by Lambada10</string>
     <string name="close_app">Close app</string>
     <string name="permission_denied">Permission denied</string>
     <string name="requires_higher_storage_permissions">This app requires storage access for scanning your music library and saving lyrics.</string>
@@ -201,6 +211,7 @@
     <string name="saved_as_lrc">Saved as .lrc ✓</string>
     <string name="embedded_lyrics">Embedded ✓</string>
     <string name="sync_saved">Sync saved</string>
+    <string name="apply">Apply</string>
 
     <!-- Spotify rotating-secret status (Settings) -->
     <string name="spotify_secrets_title">Spotify security keys</string>

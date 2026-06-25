@@ -46,6 +46,8 @@ fun BatchDownloadWarningDialog(
     onSkipExistingChangeRequest: (Boolean) -> Unit,
     autoTryProviders: Boolean,
     onAutoTryProvidersChangeRequest: (Boolean) -> Unit,
+    addUnsyncedFallback: Boolean,
+    onAddUnsyncedFallbackChangeRequest: (Boolean) -> Unit,
 ) {
     val rowPadding = PaddingValues(horizontal = 4.dp, vertical = 12.dp)
     var advancedExpanded by remember { mutableStateOf(false) }
@@ -123,6 +125,14 @@ fun BatchDownloadWarningDialog(
                             modifier = Modifier,
                             innerPaddingValues = rowPadding,
                         ) { onAutoTryProvidersChangeRequest(!autoTryProviders) }
+
+                        SwitchItem(
+                            label = stringResource(R.string.add_unsynced_if_no_synced),
+                            description = stringResource(R.string.add_unsynced_if_no_synced),
+                            selected = addUnsyncedFallback,
+                            modifier = Modifier,
+                            innerPaddingValues = rowPadding,
+                        ) { onAddUnsyncedFallbackChangeRequest(!addUnsyncedFallback) }
 
                         Text(
                             text = stringResource(R.string.private_lrc_note),

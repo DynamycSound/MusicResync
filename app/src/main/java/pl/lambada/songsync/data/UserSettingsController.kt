@@ -46,7 +46,7 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     var multiPersonWordByWord by mutableStateOf(dataStore.get(multiPersonWordByWordKey, true))
         private set
 
-    var pureBlack by mutableStateOf(dataStore.get(pureBlackKey, false))
+    var pureBlack by mutableStateOf(dataStore.get(pureBlackKey, true))
         private set
 
     var disableMarquee by mutableStateOf(dataStore.get(disableMarqueeKey, false))

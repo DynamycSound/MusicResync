@@ -48,12 +48,17 @@ fun SharedTransitionScope.SuccessContent(
     disableMarquee: Boolean,
     allowTryingAgain: Boolean,
     selectedProvider: Providers,
-    onExpandProvidersRequest: () -> Unit,
+    providerProbes: Map<Providers, pl.lambada.songsync.ui.screens.lyricsFetch.ProviderProbe>,
+    onRetryProvider: (Providers) -> Unit,
+    onRequestCovers: (suspend () -> List<String>)? = null,
+    onPickCover: (String) -> Unit = {},
+    hasCover: Boolean? = null,
 ) = Column(horizontalAlignment = Alignment.CenterHorizontally) {
     Spacer(modifier = Modifier.height(10.dp))
     CloudProviderTitle(
         selectedProvider = selectedProvider,
-        onExpandProvidersRequest = onExpandProvidersRequest,
+        probes = providerProbes,
+        onRetryProvider = onRetryProvider,
     )
     Spacer(modifier = Modifier.height(6.dp))
     SongCard(
@@ -101,6 +106,9 @@ fun SharedTransitionScope.SuccessContent(
                     onSaveLyrics = { onSaveLyrics(it.lyrics) },
                     onEmbedLyrics = { onEmbedLyrics(it.lyrics) },
                     onAdjustTiming = onAdjustTiming?.let { fn -> { fn(it.lyrics) } },
+                    onRequestCovers = onRequestCovers,
+                    onPickCover = onPickCover,
+                    hasCover = hasCover,
                 )
 
                 is LyricsFetchState.Failed -> Text(stringResource(R.string.this_track_has_no_lyrics))

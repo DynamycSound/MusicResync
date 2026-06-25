@@ -3,6 +3,7 @@ package pl.lambada.songsync.data.remote.lyrics_providers
 import android.util.Log
 import pl.lambada.songsync.data.remote.lyrics_providers.apple.AppleAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
+import pl.lambada.songsync.data.remote.lyrics_providers.others.LastResortAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.NeteaseAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.QQMusicAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.spotify.SpotifyAPI
@@ -39,6 +40,9 @@ class LyricsProviderService {
     
     // Apple Track ID
     private var appleID = 0L
+
+    // Internal last-resort canonicalizer (iTunes/Deezer) — also a source of extra cover art.
+    private val lastResortAPI = LastResortAPI()
 
     /**
      * Refreshes the access token by sending a request to the Spotify API.
@@ -89,6 +93,37 @@ class LyricsProviderService {
                 else -> throw InternalErrorException(Log.getStackTraceString(e))
             }
         }
+    }
+
+    /**
+     * Gathers album-cover URLs for a song from every provider that exposes artwork (Apple across a few search
+     * results, Spotify), so the user can pick one in the thumbnail picker. Best-effort and failure-tolerant:
+     * a provider that errors or has no art simply contributes nothing. Exact-duplicate URLs are removed.
+     */
+    suspend fun getCoverCandidates(title: String, artist: String, max: Int = 9): List<String> {
+        val urls = LinkedHashSet<String>()
+
+        suspend fun collect(provider: Providers, offsets: IntRange) {
+            for (offset in offsets) {
+                if (urls.size >= max) return
+                val cover = runCatching { getSongInfo(SongInfo(title, artist), offset, provider) }
+                    .getOrNull()?.albumCoverLink?.takeIf { it.isNotBlank() }
+                if (cover != null) urls.add(cover)
+            }
+        }
+
+        runCatching { refreshSpotifyToken() }
+        collect(Providers.APPLE, 0..3)
+        collect(Providers.SPOTIFY, 0..0)
+
+        // Top up with iTunes/Deezer artwork so there are still options when Apple/Spotify came up short.
+        if (urls.size < max) {
+            runCatching { lastResortAPI.covers(title, artist, max) }
+                .getOrDefault(emptyList())
+                .forEach { if (urls.size < max) urls.add(it) }
+        }
+
+        return urls.toList()
     }
 
     /**

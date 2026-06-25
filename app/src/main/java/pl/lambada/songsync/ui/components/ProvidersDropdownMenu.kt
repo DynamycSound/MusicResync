@@ -73,24 +73,6 @@ fun ProvidersDropdownMenuContent(
                         text = it.displayName,
                         modifier = Modifier.padding(start = 6.dp)
                     )
-                    if (it.hasWordByWord)
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .padding(horizontal = 4.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.onSurfaceVariant)
-                                .size(14.dp)
-                        ) {
-                            Text(
-                                text = "W",
-                                color = MaterialTheme.colorScheme.background,
-                                style = TextStyle(
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                            )
-                        }
                     Spacer(modifier = Modifier.weight(1f))
                     RadioButton(
                         selected = selectedProvider == it,

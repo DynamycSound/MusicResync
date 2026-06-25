@@ -27,15 +27,10 @@ fun SharedTransitionScope.LocalSongContent(
     animatedVisibilityScope: AnimatedVisibilityScope,
     disableMarquee: Boolean
 ) {
-    Row {
-        if (song.filePath.isNotEmpty()) {
-            Icon(
-                imageVector = Icons.Filled.Downloading,
-                contentDescription = null,
-                Modifier.padding(end = 5.dp)
-            )
-            Text(stringResource(R.string.local_song))
-        } else {
+    // "Local song" label removed — it added no information above the song card. The now-playing case keeps its
+    // label since it distinguishes the currently-playing track from a picked local file.
+    if (song.filePath.isEmpty()) {
+        Row {
             Icon(
                 imageVector = Icons.Filled.PlayCircleOutline,
                 contentDescription = null,
@@ -43,8 +38,8 @@ fun SharedTransitionScope.LocalSongContent(
             )
             Text(stringResource(R.string.now_playing_song))
         }
+        Spacer(modifier = Modifier.height(6.dp))
     }
-    Spacer(modifier = Modifier.height(6.dp))
     SongCard(
         filePath = song.filePath,
         songName = song.songName,

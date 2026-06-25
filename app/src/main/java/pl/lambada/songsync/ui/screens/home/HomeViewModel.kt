@@ -30,6 +30,7 @@ import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.domain.model.SortOrders
 import pl.lambada.songsync.domain.model.SortValues
+import pl.lambada.songsync.util.cache.SongCache
 import pl.lambada.songsync.util.downloadLyrics
 import pl.lambada.songsync.util.ext.toLrcFile
 import pl.lambada.songsync.util.matching.LrcPrescan
@@ -85,6 +86,10 @@ class HomeViewModel(
 
     var isRefreshing by mutableStateOf(false)
 
+    /** True while a batch download is running — gates the disk refresh so it can't clobber in-flight states. */
+    var batchRunning by mutableStateOf(false)
+        private set
+
     var searchQuery by mutableStateOf("")
 
     // Filter settings
@@ -138,7 +143,10 @@ class HomeViewModel(
     }
 
     fun updateAllSongs(context: Context, sortBy: SortValues, sortOrder: SortOrders) = viewModelScope.launch(Dispatchers.IO) {
+        // getAllSongs seeds row state instantly from the persistent cache, so the list renders immediately.
         allSongs = getAllSongs(context, sortBy, sortOrder)
+        // Then verify against disk in the background and replace the cached state with the fresh truth.
+        refreshLyricStatesFromDisk()
     }
 
     /**
@@ -146,20 +154,30 @@ class HomeViewModel(
      * row reflects lyrics just saved on the fetch screen, or a sidecar .lrc added/removed outside the app.
      * No-op while a batch is running so it can't clobber in-flight FETCHING/SYNCED states.
      */
+    /** Fast, no-disk re-seed of row state from the persistent cache (e.g. after the player saved/removed lyrics). */
+    fun reseedFromCache() {
+        val songs = cachedSongs ?: return
+        songs.forEach { s ->
+            val path = s.filePath ?: return@forEach
+            SongCache.matchInfo(path)?.let { songMatchStatus[path] = it }
+        }
+    }
+
     fun refreshLyricStatesFromDisk() {
-        if (isRefreshing) return
+        if (batchRunning) return // don't clobber in-flight FETCHING/SYNCED states while a batch is saving
         val songs = cachedSongs ?: return
         viewModelScope.launch(Dispatchers.IO) {
             val results = LrcPrescan.scan(songs.mapNotNull { it.filePath })
-            results.forEach { (path, r) ->
-                songMatchStatus[path] = SongMatchInfo(
-                    when (r) {
-                        PrescanResult.ALREADY_SYNCED, PrescanResult.RENAMED_FROM_PRIVATE -> LyricState.HAS_LYRICS
-                        PrescanResult.ALREADY_PRESENT_UNSYNCED -> LyricState.UNSYNCED
-                        PrescanResult.NONE -> LyricState.NO_LYRICS
-                    }
-                )
+            val states = results.mapValues { (_, r) ->
+                when (r) {
+                    PrescanResult.ALREADY_SYNCED, PrescanResult.RENAMED_FROM_PRIVATE -> LyricState.HAS_LYRICS
+                    PrescanResult.ALREADY_PRESENT_UNSYNCED -> LyricState.UNSYNCED
+                    PrescanResult.NONE -> LyricState.NO_LYRICS
+                }
             }
+            states.forEach { (path, st) -> songMatchStatus[path] = SongMatchInfo(st) }
+            // Persist the fresh truth (keeping each song's remembered offset/provider) for an instant next launch.
+            SongCache.replaceStates(states)
         }
     }
 
@@ -226,26 +244,15 @@ class HomeViewModel(
             }
             cursor?.close()
 
-            // MusicResync: no-network pre-scan -- strip _private suffixes and surface existing .lrc files so
-            // already-lyricked songs land in "Has Lyrics" immediately instead of the fetch queue.
+            // MusicResync: seed lyric state instantly from the persistent cache (no disk scan) so the list and
+            // its green/red notes render immediately on launch. updateAllSongs then verifies against disk in the
+            // background (refreshLyricStatesFromDisk) and replaces this with the fresh truth.
             runCatching {
-                val results = LrcPrescan.scan(songs.mapNotNull { s -> s.filePath })
-                val renamed = results.values.count { r -> r == PrescanResult.RENAMED_FROM_PRIVATE }
-                val present = results.values.count { r -> r != PrescanResult.NONE }
-                Log.i("MusicResync", "[prescan] ${songs.size} songs -> $present already have lyrics ($renamed renamed from _private)")
-
-                // Seed lyric state here (off the main thread) so composition never has to touch the disk.
-                // This runs only on first load / refresh (cachedSongs was null), so re-seeding from disk is the
-                // source of truth -- it also reflects lyrics the user removed since the last load.
+                SongCache.init(context)
                 songMatchStatus.clear()
-                results.forEach { (path, r) ->
-                    songMatchStatus[path] = SongMatchInfo(
-                        when (r) {
-                            PrescanResult.ALREADY_SYNCED, PrescanResult.RENAMED_FROM_PRIVATE -> LyricState.HAS_LYRICS
-                            PrescanResult.ALREADY_PRESENT_UNSYNCED -> LyricState.UNSYNCED
-                            PrescanResult.NONE -> LyricState.NO_LYRICS
-                        }
-                    )
+                songs.forEach { s ->
+                    val path = s.filePath ?: return@forEach
+                    SongCache.matchInfo(path)?.let { songMatchStatus[path] = it }
                 }
             }
 
@@ -401,6 +408,8 @@ class HomeViewModel(
         }
     }
 
+    private var batchJob: kotlinx.coroutines.Job? = null
+
     fun batchDownloadLyrics(
         context: Context,
         correctMetadata: Boolean = false,
@@ -408,24 +417,65 @@ class HomeViewModel(
         autoTryProviders: Boolean = true,
         saveLrc: Boolean = true,
         embedLyrics: Boolean = false,
+        addUnsyncedFallback: Boolean = false,
         onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int) -> Unit,
         onDownloadComplete: () -> Unit,
         onRateLimitReached: () -> Unit
-    ) = viewModelScope.launch {
-        downloadLyrics(
-            songs = songsToBatchDownload,
-            viewModel = this@HomeViewModel,
-            context = context,
-            correctMetadata = correctMetadata,
-            skipExisting = skipExisting,
-            autoTryProviders = autoTryProviders,
-            saveLrc = saveLrc,
-            embedLyrics = embedLyrics,
-            onProgressUpdate = onProgressUpdate,
-            onSongResult = { filePath, info -> songMatchStatus[filePath] = info },
-            onDownloadComplete = onDownloadComplete,
-            onRateLimitReached = onRateLimitReached,
-        )
+    ): kotlinx.coroutines.Job {
+        batchRunning = true
+        val job = viewModelScope.launch {
+            downloadLyrics(
+                songs = songsToBatchDownload,
+                viewModel = this@HomeViewModel,
+                context = context,
+                correctMetadata = correctMetadata,
+                skipExisting = skipExisting,
+                autoTryProviders = autoTryProviders,
+                saveLrc = saveLrc,
+                embedLyrics = embedLyrics,
+                addUnsyncedFallback = addUnsyncedFallback,
+                onProgressUpdate = onProgressUpdate,
+                onSongResult = { filePath, info ->
+                    songMatchStatus[filePath] = info
+                    SongCache.setStateDeferred(filePath, info)
+                },
+                onDownloadComplete = onDownloadComplete,
+                onRateLimitReached = onRateLimitReached,
+            )
+        }
+        batchJob = job
+        // Persist whatever was written, whether the batch finished or was cancelled.
+        job.invokeOnCompletion {
+            SongCache.flush()
+            batchRunning = false
+        }
+        return job
+    }
+
+    /** Stops an in-progress batch download immediately (the loop checks for cancellation between songs). */
+    fun cancelBatch() {
+        batchJob?.cancel()
+        batchJob = null
+    }
+
+    /**
+     * Patches a song's title/artist in every in-memory list the UI reads, so a row refreshes immediately after
+     * "Correct the metadata" rewrites its tags — instead of staying on the stale value (e.g. "Unknown") until the
+     * MediaStore is re-scanned on a later cold start. Call on the main thread.
+     */
+    fun refreshSongMetadata(filePath: String, title: String?, artist: String?) {
+        if (title.isNullOrBlank() && artist.isNullOrBlank()) return
+        fun Song.patch(): Song =
+            if (this.filePath != filePath) this
+            else copy(
+                title = title?.takeIf { it.isNotBlank() } ?: this.title,
+                artist = artist?.takeIf { it.isNotBlank() } ?: this.artist,
+            )
+        cachedSongs = cachedSongs?.map { it.patch() }
+        _cachedFilteredSongs.value = _cachedFilteredSongs.value.map { it.patch() }
+        _searchResults.value = _searchResults.value.map { it.patch() }
+        displaySongs = displaySongs.map { it.patch() }
+        allSongs = allSongs?.map { it.patch() }
     }
 
 }

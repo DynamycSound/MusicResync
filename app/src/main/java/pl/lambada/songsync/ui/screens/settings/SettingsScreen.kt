@@ -33,9 +33,6 @@ import pl.lambada.songsync.ui.screens.settings.components.RomanizationSwitch
 import pl.lambada.songsync.ui.screens.settings.components.SdCardPathSetting
 import pl.lambada.songsync.ui.screens.settings.components.ShowPathSwitch
 import pl.lambada.songsync.ui.screens.settings.components.SpotifySecretsStatus
-import pl.lambada.songsync.ui.screens.settings.components.SupportSection
-import pl.lambada.songsync.ui.screens.settings.components.TranslationSection
-import pl.lambada.songsync.ui.screens.settings.components.TranslationSwitch
 import pl.lambada.songsync.ui.screens.settings.components.UpdateAvailableDialog
 import pl.lambada.songsync.util.ext.getVersion
 
@@ -89,12 +86,6 @@ fun SettingsScreen(
 
             item { SettingsHeadLabel(label = stringResource(id = R.string.provider)) }
             item {
-                TranslationSwitch(
-                    selected = userSettingsController.includeTranslation,
-                    onToggle = { userSettingsController.updateIncludeTranslation(it) }
-                )
-            }
-            item {
                 RomanizationSwitch(
                     selected = userSettingsController.includeRomanization,
                     onToggle = { userSettingsController.updateIncludeRomanization(it) }
@@ -144,12 +135,6 @@ fun SettingsScreen(
                     uriHandler = uriHandler
                 )
             }
-
-            item { SettingsHeadLabel(stringResource(R.string.support)) }
-            item { SupportSection(uriHandler = uriHandler) }
-
-            item { SettingsHeadLabel(label = stringResource(id = R.string.translation)) }
-            item { TranslationSection(uriHandler = uriHandler) }
 
             item { SettingsHeadLabel(stringResource(R.string.contributors)) }
             item { ContributorsSection(uriHandler = uriHandler) }

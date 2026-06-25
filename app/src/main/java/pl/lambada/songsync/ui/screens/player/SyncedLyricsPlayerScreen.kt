@@ -20,13 +20,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,6 +39,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -49,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -57,10 +60,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import pl.lambada.songsync.R
 import pl.lambada.songsync.util.applyOffsetToLyrics
+import pl.lambada.songsync.util.cache.SongCache
+import pl.lambada.songsync.util.cache.SongCacheEntry
+import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.showToast
+import pl.lambada.songsync.util.toCrlf
 import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -103,12 +113,15 @@ fun SyncedLyricsPlayerScreen(
     artists: String,
     onBack: () -> Unit,
     onFindOnline: () -> Unit = {},
+    /** When arriving from "Adjust timing", the (not-yet-saved) lyrics are passed here so nothing is written
+     *  until the user presses the checkmark. Null when opening an already-saved song from Home. */
+    initialLyrics: String? = null,
 ) {
     val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
     var lrcText by remember(filePath) {
         mutableStateOf(
-            runCatching {
+            initialLyrics?.takeIf { it.isNotBlank() } ?: runCatching {
                 File(filePath.substringBeforeLast('.') + ".lrc").takeIf { it.exists() }?.readText()
             }.getOrNull().orEmpty()
         )
@@ -123,10 +136,29 @@ fun SyncedLyricsPlayerScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var positionMs by remember { mutableIntStateOf(0) }
     val durationMs = remember { runCatching { player.duration }.getOrDefault(0) }
-    var offsetMs by remember { mutableFloatStateOf(0f) }
+    // The offset already baked into the on-disk .lrc (remembered across launches). The slider opens at this
+    // value; only the *delta* the user adds on top is applied to the file on save.
+    var storedOffset by remember(filePath) {
+        mutableIntStateOf(SongCache.get(filePath)?.offsetMs ?: 0)
+    }
+    var offsetMs by remember(filePath) { mutableFloatStateOf(storedOffset.toFloat()) }
 
     DisposableEffect(Unit) {
         onDispose { runCatching { player.release() } }
+    }
+
+    // Pause the music (and, by extension, the lyric auto-scroll, which only advances while isPlaying) as soon as
+    // the app leaves the foreground — otherwise playback kept running in the background after the user left.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                runCatching { if (player.isPlaying) player.pause() }
+                isPlaying = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // Auto-play on open so the user can immediately verify the sync (especially when arriving from the
@@ -135,21 +167,30 @@ fun SyncedLyricsPlayerScreen(
         runCatching { if (!player.isPlaying) { player.start(); isPlaying = true } }
     }
 
-    // Bakes the current offset into the .lrc (shifts timestamps) so the correction persists, then zeroes the
-    // live offset since it's now part of the file.
+    // Persists the lyrics with the chosen timing, remembers the total offset for next time, marks the song as
+    // having lyrics, and returns to Home (where the row now shows a green note). Only the delta on top of the
+    // already-baked [storedOffset] is applied, so re-saving never double-shifts.
     fun saveSync() {
-        val off = offsetMs.roundToInt()
+        val total = offsetMs.roundToInt()
+        val delta = total - storedOffset
         val file = File(filePath.substringBeforeLast('.') + ".lrc")
-        if (off == 0 || !file.exists()) {
-            showToast(context, context.getString(R.string.sync_saved))
-            return
+        val base = lrcText.ifBlank {
+            runCatching { file.takeIf { it.exists() }?.readText() }.getOrNull().orEmpty()
         }
+        if (base.isBlank()) { onBack(); return }
         runCatching {
-            val shifted = applyOffsetToLyrics(file.readText(), off)
-            file.writeText(shifted)
+            val shifted = if (delta != 0) applyOffsetToLyrics(base, delta) else base
+            file.writeText(shifted.toCrlf())
             lrcText = shifted
-            offsetMs = 0f
-        }.onSuccess { showToast(context, context.getString(R.string.sync_saved)) }
+            storedOffset = total
+            // Remember the offset + that this song now has (synced) lyrics, keeping any provider memory.
+            SongCache.update(filePath) { prev ->
+                (prev ?: SongCacheEntry(LyricState.HAS_LYRICS)).copy(state = LyricState.HAS_LYRICS, offsetMs = total)
+            }
+        }.onSuccess {
+            showToast(context, context.getString(R.string.sync_saved))
+            onBack()
+        }
     }
 
     // Poll playback position while playing.
@@ -167,7 +208,9 @@ fun SyncedLyricsPlayerScreen(
     val currentIndex by remember {
         derivedStateOf {
             if (lines.isEmpty()) 0
-            else lines.indexOfLast { it.timeMs <= positionMs + offsetMs.roundToInt() }.coerceAtLeast(0)
+            // Only the *additional* nudge (beyond what's already baked into the loaded .lrc) shifts the preview,
+            // so an already-offset song isn't double-shifted on screen.
+            else lines.indexOfLast { it.timeMs <= positionMs + (offsetMs.roundToInt() - storedOffset) }.coerceAtLeast(0)
         }
     }
     LaunchedEffect(currentIndex) {
@@ -202,10 +245,11 @@ fun SyncedLyricsPlayerScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                ),
                 actions = {
-                    IconButton(onClick = { saveSync() }) {
-                        Icon(Icons.Filled.Check, contentDescription = "Save sync")
-                    }
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "More")
                     }
@@ -221,6 +265,11 @@ fun SyncedLyricsPlayerScreen(
                             onClick = {
                                 menuExpanded = false
                                 runCatching { File(filePath.substringBeforeLast('.') + ".lrc").delete() }
+                                // Mark the song as having no lyrics straight away so Home shows a red note and
+                                // tapping it opens the finder (not this player) — no async disk-scan race.
+                                SongCache.update(filePath) { prev ->
+                                    (prev ?: SongCacheEntry(LyricState.NO_LYRICS)).copy(state = LyricState.NO_LYRICS, offsetMs = 0)
+                                }
                                 runCatching { player.pause() }
                                 onBack()
                             }
@@ -270,7 +319,7 @@ fun SyncedLyricsPlayerScreen(
                                     }
                                     .clickable {
                                         // tap a line to jump the track to it
-                                        val seekTo = max(0, lines[i].timeMs.toInt() - offsetMs.roundToInt())
+                                        val seekTo = max(0, lines[i].timeMs.toInt() - (offsetMs.roundToInt() - storedOffset))
                                         runCatching { player.seekTo(seekTo) }
                                         positionMs = seekTo
                                         if (!player.isPlaying) { player.start(); isPlaying = true }
@@ -285,7 +334,7 @@ fun SyncedLyricsPlayerScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    .background(MaterialTheme.colorScheme.surface)
                     .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 // seek bar
@@ -312,30 +361,44 @@ fun SyncedLyricsPlayerScreen(
                         value = offsetMs,
                         onValueChange = { offsetMs = it },
                         onValueChangeFinished = { applyOffsetSeek() },
-                        valueRange = -5000f..5000f,
+                        // ±5s around whatever offset is already remembered, so a saved nudge can still be tuned.
+                        valueRange = (storedOffset - 5000f)..(storedOffset + 5000f),
                         modifier = Modifier.weight(1f)
                     )
                 }
 
                 Spacer(Modifier.height(4.dp))
 
+                // Equal-weight side boxes flank the play/pause button so it sits exactly at the bottom-centre.
+                // Left: rewind 5s. Right: the blue "Apply" button that saves the sync (was a tick up top).
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = {
-                        val t = max(0, positionMs - 5000); runCatching { player.seekTo(t) }; positionMs = t
-                    }) {
-                        Icon(Icons.Filled.Replay, contentDescription = "Back 5s", modifier = Modifier.size(28.dp))
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        IconButton(onClick = {
+                            val t = max(0, positionMs - 5000); runCatching { player.seekTo(t) }; positionMs = t
+                        }) {
+                            Icon(Icons.Filled.Replay, contentDescription = "Back 5s", modifier = Modifier.size(28.dp))
+                        }
                     }
-                    Spacer(Modifier.size(16.dp))
                     FilledIconButton(onClick = { togglePlay() }, modifier = Modifier.size(64.dp)) {
                         Icon(
                             if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
                             modifier = Modifier.size(34.dp)
                         )
+                    }
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                        Button(
+                            onClick = { saveSync() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1565C0),
+                                contentColor = Color.White,
+                            )
+                        ) {
+                            Text(stringResource(R.string.apply))
+                        }
                     }
                 }
             }

@@ -85,6 +85,7 @@ fun Navigator(
                     filePath = args.filePath,
                     songName = args.songName,
                     artists = args.artists,
+                    initialLyrics = args.lyrics,
                     onBack = { navController.popBackStack() },
                     onFindOnline = {
                         navController.navigate(
@@ -135,4 +136,6 @@ data class PlayerScreen(
     val filePath: String,
     val songName: String,
     val artists: String,
+    /** Optional unsaved lyrics passed from "Adjust timing" — the player writes them only on the checkmark. */
+    val lyrics: String? = null,
 )

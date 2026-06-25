@@ -45,21 +45,21 @@ fun MusicResyncTheme(
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
+    // pureBlack is a DARK-theme variant only. It must never leak into light mode, or "white mode" renders dark
+    // (the bug). So every branch gates pureBlack behind darkTheme, and light mode always gets a light scheme.
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            if (darkTheme)
-                if (pureBlack)
-                    dynamicDarkColorScheme(context).copy(
-                        surface = Color.Black,
-                        background = Color.Black,
-                    )
-                else
-                    dynamicDarkColorScheme(context)
-            else
-                dynamicLightColorScheme(context)
+            when {
+                darkTheme && pureBlack -> dynamicDarkColorScheme(context).copy(
+                    surface = Color.Black,
+                    background = Color.Black,
+                )
+                darkTheme -> dynamicDarkColorScheme(context)
+                else -> dynamicLightColorScheme(context)
+            }
         }
 
-        pureBlack -> darkColorScheme.copy(
+        darkTheme && pureBlack -> darkColorScheme.copy(
             surface = Color.Black,
             background = Color.Black,
         )

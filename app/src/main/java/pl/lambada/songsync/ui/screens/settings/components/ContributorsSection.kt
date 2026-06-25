@@ -12,25 +12,43 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import pl.lambada.songsync.R
 
+/**
+ * Attribution for this fork: the current developer, and the original project (SongSync) this app is based on.
+ * Each row links out — the developer to their profile, "Sync Music" to the original author.
+ */
 @Composable
 fun ContributorsSection(uriHandler: UriHandler) {
-    Column{
-        Contributor.entries.forEach {
-            val additionalInfo = stringResource(id = it.contributionLevel.stringResource)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { it.github?.let { it1 -> uriHandler.openUri(it1) } }
-                    .padding(horizontal = 22.dp, vertical = 16.dp)
-            ) {
-                Text(text = it.devName)
-                Text(
-                    text = additionalInfo,
-                    color = MaterialTheme.colorScheme.outline,
-                    fontSize = 12.sp
-                )
-            }
-        }
+    Column {
+        ContributorRow(
+            name = "DynamycSound",
+            subtitle = stringResource(R.string.developer),
+            url = "https://github.com/DynamycSound",
+            uriHandler = uriHandler,
+        )
+        ContributorRow(
+            name = "Sync Music",
+            subtitle = stringResource(R.string.original_project),
+            url = "https://github.com/Lambada10",
+            uriHandler = uriHandler,
+        )
+    }
+}
+
+@Composable
+private fun ContributorRow(name: String, subtitle: String, url: String, uriHandler: UriHandler) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { uriHandler.openUri(url) }
+            .padding(horizontal = 22.dp, vertical = 16.dp)
+    ) {
+        Text(text = name)
+        Text(
+            text = subtitle,
+            color = MaterialTheme.colorScheme.outline,
+            fontSize = 12.sp
+        )
     }
 }

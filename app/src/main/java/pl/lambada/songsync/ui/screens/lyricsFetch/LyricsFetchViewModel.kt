@@ -3,6 +3,7 @@ package pl.lambada.songsync.ui.screens.lyricsFetch
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -13,18 +14,25 @@ import pl.lambada.songsync.R
 import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
 import pl.lambada.songsync.data.remote.lyrics_providers.MatchConfig
+import pl.lambada.songsync.data.remote.lyrics_providers.ScoredHit
 import pl.lambada.songsync.data.remote.lyrics_providers.SmartLyricsMatcher
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.ui.LocalSong
 import pl.lambada.songsync.util.Providers
+import pl.lambada.songsync.util.cache.SongCache
+import pl.lambada.songsync.util.cache.SongCacheEntry
 import pl.lambada.songsync.util.matching.FilenameParser
 import pl.lambada.songsync.util.matching.LocalTrack
+import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.matching.MatchStrategy
 import pl.lambada.songsync.util.matching.MatchTier
 import pl.lambada.songsync.util.matching.QueryCandidate
+import com.kyant.taglib.TagLib
+import pl.lambada.songsync.util.embedCoverInFile
 import pl.lambada.songsync.util.embedLyricsInFile
 import pl.lambada.songsync.util.ext.getVersion
 import pl.lambada.songsync.util.generateLrcContent
+import pl.lambada.songsync.util.getFileDescriptorFromPath
 import pl.lambada.songsync.util.isLegacyFileAccessRequired
 import pl.lambada.songsync.util.newLyricsFilePath
 import pl.lambada.songsync.util.saveToExternalPath
@@ -55,7 +63,24 @@ class LyricsFetchViewModel(
     /** Live "which provider are we trying right now" status, shown while searching. */
     var searchStatus by mutableStateOf<Providers?>(null)
 
+    /** Per-provider probe result for the cloud-icon dropdown: tried→HAS_SYNCED/NONE, or LOADING during a retry. */
+    val providerProbes = mutableStateMapOf<Providers, ProviderProbe>()
+
     var lyricsFetchState by mutableStateOf<LyricsFetchState>(LyricsFetchState.NotSubmitted)
+
+    /** Cleaned local path used both for saving the .lrc and as the persistent cache key. */
+    private val cachePath: String? get() = source?.filePath?.replace(".nowplaying", "")
+
+    private fun rememberProviders(chosen: Providers?, failed: List<Providers>, state: LyricState) {
+        val path = cachePath ?: return
+        SongCache.update(path) { prev ->
+            (prev ?: SongCacheEntry(state)).copy(
+                state = state,
+                chosenProvider = chosen?.displayName ?: prev?.chosenProvider,
+                failedProviders = failed.map { it.displayName },
+            )
+        }
+    }
 
     private suspend fun getSyncedLyrics(title: String, artist: String): String? =
         lyricsProviderService.getSyncedLyrics(
@@ -73,6 +98,7 @@ class LyricsFetchViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             queryState = QueryStatus.Pending
             lyricsFetchState = LyricsFetchState.NotSubmitted
+            providerProbes.clear()
 
             try {
                 // Clean the (often messy) tags/filename into proper query candidates, score every provider hit
@@ -90,26 +116,54 @@ class LyricsFetchViewModel(
 
                 val hits = matcher.search(
                     local, candidates, MatchConfig(providerOrder = order),
-                    onAttempt = { provider -> searchStatus = provider }
+                    onAttempt = { provider -> searchStatus = provider; providerProbes[provider] = ProviderProbe.LOADING }
                 )
                 searchStatus = null
-                val best = hits.firstOrNull { it.tier != MatchTier.REJECT } ?: hits.firstOrNull()
-                    ?: run {
-                        queryState = QueryStatus.Failed(Exception("No provider had matching synced lyrics."))
-                        return@launch
-                    }
 
-                val lyrics = matcher.fetchLyrics(best)
-                if (lyrics.isNullOrBlank()) {
-                    queryState = QueryStatus.Failed(Exception("Found a match but no synced lyrics."))
+                // Fall through every acceptable hit until one actually returns synced lyrics (a provider can
+                // match the metadata yet have no synced body -- the old code gave up at the first such hit).
+                val ranked = hits.filter { it.tier != MatchTier.REJECT }.ifEmpty { hits }
+                var chosen: ScoredHit? = null
+                var lyrics: String? = null
+                for (hit in ranked) {
+                    val l = runCatching { matcher.fetchLyrics(hit) }.getOrNull()
+                    if (!l.isNullOrBlank()) { chosen = hit; lyrics = l; break }
+                }
+
+                // Record per-provider probe outcomes for the cloud-icon dropdown.
+                order.forEach { p -> providerProbes[p] = if (p == chosen?.provider) ProviderProbe.HAS_SYNCED else ProviderProbe.NONE }
+
+                if (chosen != null && lyrics != null) {
+                    activeProvider = chosen.provider
+                    rememberProviders(chosen.provider, order.filter { it != chosen.provider }, LyricState.SYNCED)
+                    queryState = QueryStatus.Success(
+                        SongInfo(songName = chosen.result.title, artistName = chosen.result.artist)
+                    )
+                    lyricsFetchState = LyricsFetchState.Success(lyrics)
                     return@launch
                 }
 
-                activeProvider = best.provider
-                queryState = QueryStatus.Success(
-                    SongInfo(songName = best.result.title, artistName = best.result.artist)
+                // Last resort: canonicalize a messy filename via iTunes/Deezer and retry LRCLib under the clean
+                // name. Catches weird files the normal providers missed, and can even recover SYNCED lyrics.
+                val lr = runCatching { matcher.lastResort(local, candidates) }.getOrNull()
+                if (lr != null && lr.synced) {
+                    rememberProviders(null, order, LyricState.SYNCED)
+                    queryState = QueryStatus.Success(SongInfo(songName = lr.title, artistName = lr.artist))
+                    lyricsFetchState = LyricsFetchState.Success(lr.lyrics)
+                    return@launch
+                }
+
+                // No synced lyrics anywhere -> offer plain (from LRCLib or the last resort) instead of erroring.
+                rememberProviders(null, order, LyricState.NO_LYRICS)
+                val plain = runCatching { matcher.fetchPlainLyrics(local, candidates) }.getOrNull()
+                val plainLyrics = plain?.plainLyrics ?: lr?.takeUnless { it.synced }?.lyrics
+                queryState = QueryStatus.SyncedNotFound(
+                    song = SongInfo(
+                        songName = plain?.result?.title ?: lr?.title ?: ranked.firstOrNull()?.result?.title ?: querySongName,
+                        artistName = plain?.result?.artist ?: lr?.artist ?: ranked.firstOrNull()?.result?.artist ?: queryArtistName,
+                    ),
+                    plainLyrics = plainLyrics,
                 )
-                lyricsFetchState = LyricsFetchState.Success(lyrics)
             } catch (e: UnknownHostException) {
                 searchStatus = null
                 queryState = QueryStatus.NoConnection
@@ -120,11 +174,94 @@ class LyricsFetchViewModel(
         }
     }
 
+    /** Re-fetch a single provider (tapped in the cloud dropdown), showing a spinner on that row while it runs. */
+    fun retryProvider(provider: Providers, context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            providerProbes[provider] = ProviderProbe.LOADING
+            try {
+                val durationSec = source?.filePath?.let { readDurationSeconds(context, it) }
+                val local = LocalTrack(querySongName, queryArtistName, durationSec)
+                val candidates = FilenameParser.candidates(querySongName, queryArtistName, source?.filePath)
+                    .ifEmpty { listOf(QueryCandidate(querySongName, queryArtistName ?: "", MatchStrategy.TAGS)) }
+
+                val hits = matcher.search(local, candidates, MatchConfig(providerOrder = listOf(provider)))
+                val ranked = hits.filter { it.tier != MatchTier.REJECT }.ifEmpty { hits }
+                var lyrics: String? = null
+                for (hit in ranked) {
+                    val l = runCatching { matcher.fetchLyrics(hit) }.getOrNull()
+                    if (!l.isNullOrBlank()) { lyrics = l; break }
+                }
+
+                if (lyrics != null) {
+                    providerProbes[provider] = ProviderProbe.HAS_SYNCED
+                    activeProvider = provider
+                    userSettingsController.updateSelectedProviders(provider)
+                    rememberProviders(provider, providerProbes.filterValues { it == ProviderProbe.NONE }.keys.toList(), LyricState.SYNCED)
+                    queryState = QueryStatus.Success(
+                        SongInfo(songName = ranked.first().result.title, artistName = ranked.first().result.artist)
+                    )
+                    lyricsFetchState = LyricsFetchState.Success(lyrics)
+                } else {
+                    providerProbes[provider] = ProviderProbe.NONE
+                }
+            } catch (e: Exception) {
+                providerProbes[provider] = ProviderProbe.NONE
+            }
+        }
+    }
+
     /** Switch provider from the single-song screen (tapping the provider label) and re-fetch with it first. */
     fun changeProvider(provider: Providers, context: Context) {
         userSettingsController.updateSelectedProviders(provider)
         activeProvider = provider
         loadSongInfo(context, tryingAgain = false)
+    }
+
+    /** Whether the local file already has embedded artwork — drives the "Add" vs "Change" thumbnail label.
+     *  Null until checked. */
+    var localHasCover by mutableStateOf<Boolean?>(null)
+
+    fun checkLocalCover(context: Context) {
+        val path = cachePath ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            localHasCover = runCatching {
+                val fd = getFileDescriptorFromPath(context, path, "r") ?: return@runCatching false
+                TagLib.getFrontCover(fd.dup().detachFd()) != null
+            }.getOrDefault(false)
+        }
+    }
+
+    /** Album-cover candidates from the providers, for the thumbnail picker. */
+    suspend fun fetchCoverCandidates(song: SongInfo): List<String> =
+        lyricsProviderService.getCoverCandidates(
+            song.songName ?: querySongName,
+            song.artistName ?: queryArtistName,
+        )
+
+    /** Downloads and embeds the chosen cover into the local audio file (off the main thread). */
+    fun embedCover(url: String, context: Context) {
+        val path = cachePath ?: run {
+            showToast(context, context.getString(R.string.embed_non_local_song_error)); return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = embedCoverInFile(context, path, url)
+            localHasCover = ok || localHasCover == true
+            showToast(context, context.getString(if (ok) R.string.thumbnail_saved else R.string.error))
+        }
+    }
+
+    /** Builds the .lrc content WITHOUT writing it — used by "Adjust timing" so nothing is saved until the
+     *  user confirms with the checkmark in the player. */
+    fun buildLrc(lyrics: String, song: SongInfo, context: Context): String =
+        generateLrcContent(song, lyrics, context.getString(R.string.generated_using), lrcOffset, userSettingsController.directlyModifyTimestamps)
+
+    /** Saves plain (unsynced) lyrics chosen from the "no synced lyrics" prompt and records it as UNSYNCED. */
+    fun acceptPlainLyrics(plainLyrics: String, song: SongInfo, context: Context) {
+        val path = cachePath
+        saveLyricsToFile(plainLyrics, song, path, context, context.getString(R.string.generated_using))
+        path?.let { p ->
+            SongCache.update(p) { prev -> (prev ?: SongCacheEntry(LyricState.UNSYNCED)).copy(state = LyricState.UNSYNCED) }
+        }
     }
 
     fun saveLyricsToFile(
@@ -147,6 +284,12 @@ class LyricsFetchViewModel(
                 fileName = file.name,
                 newLyricsFilePath = userSettingsController.sdCardPath
             )
+        }
+
+        // Remember this song now has (synced) lyrics so Home shows a green note on return. acceptPlainLyrics
+        // downgrades this to UNSYNCED afterwards for the plain-fallback path.
+        cachePath?.let { p ->
+            SongCache.update(p) { prev -> (prev ?: SongCacheEntry(LyricState.HAS_LYRICS)).copy(state = LyricState.HAS_LYRICS) }
         }
 
         showToast(context, R.string.file_saved_to, file.absolutePath)
@@ -219,6 +362,12 @@ sealed interface QueryStatus {
     data object NotSubmitted : QueryStatus
     data object Pending : QueryStatus
     data class Success(val song: SongInfo) : QueryStatus
+
+    /** A match was found but no provider had synced lyrics. Offer plain lyrics (if any) instead of failing. */
+    data class SyncedNotFound(val song: SongInfo, val plainLyrics: String?) : QueryStatus
     data class Failed(val exception: Exception) : QueryStatus
     data object NoConnection : QueryStatus
 }
+
+/** Outcome of probing one provider for the current song, shown in the cloud-icon dropdown. */
+enum class ProviderProbe { LOADING, HAS_SYNCED, NONE }
