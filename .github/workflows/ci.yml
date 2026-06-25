@@ -16,18 +16,13 @@ jobs:
 
     permissions:
       contents: read
-      packages: write
-      checks: write
-      pull-requests: write
-      statuses: write
-      security-events: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: "zulu"
           java-version: "17"
@@ -46,34 +41,35 @@ jobs:
     name: Build signed release APK
     runs-on: ubuntu-latest
 
-    env:
-      RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-      RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEYSTORE_ALIAS }}
-      RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-      KEYSTORE_BASE_64: ${{ secrets.KEYSTORE_BASE_64 }}
-
     permissions:
       contents: read
-      packages: write
-      checks: write
-      pull-requests: write
-      statuses: write
-      security-events: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: "zulu"
           java-version: "17"
 
-      - name: Set up signing key
+      # MusicResync is sideloaded (not a Play Store app), so the release APK only needs *a* signature to be
+      # installable. We mint a throwaway keystore here, which keeps CI green with zero secrets. The canonical
+      # release the maintainer distributes is built locally with the stable keystore (see project notes); if you
+      # ever want CI to produce in-place-upgradeable APKs, swap this step for a keystore decoded from a secret.
+      - name: Generate signing key
         run: |
-          base64 -d <<< $KEYSTORE_BASE_64 > release.keystore
-          echo "RELEASE_STORE_FILE=$(realpath release.keystore)" >> $GITHUB_ENV
+          keytool -genkeypair -v -keystore release.keystore \
+            -alias musicresync -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass musicresync -keypass musicresync \
+            -dname "CN=MusicResync, OU=DynamycSound, O=DynamycSound, C=US"
+          {
+            echo "RELEASE_STORE_FILE=$(realpath release.keystore)"
+            echo "RELEASE_STORE_PASSWORD=musicresync"
+            echo "RELEASE_KEY_ALIAS=musicresync"
+            echo "RELEASE_KEY_PASSWORD=musicresync"
+          } >> "$GITHUB_ENV"
 
       - name: Build release APK
         run: ./gradlew assembleRelease
