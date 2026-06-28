@@ -86,6 +86,7 @@ fun Navigator(
                     songName = args.songName,
                     artists = args.artists,
                     initialLyrics = args.lyrics,
+                    directlyModifyTimestamps = userSettingsController.directlyModifyTimestamps,
                     onBack = { navController.popBackStack() },
                     onFindOnline = {
                         navController.navigate(

@@ -27,17 +27,20 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
     var successCount by rememberSaveable { mutableIntStateOf(0) }
     var noLyricsCount by rememberSaveable { mutableIntStateOf(0) }
     var failedCount by rememberSaveable { mutableIntStateOf(0) }
+    var skippedCount by rememberSaveable { mutableIntStateOf(0) }
     var correctMetadata by rememberSaveable { mutableStateOf(false) }
     var skipExisting by rememberSaveable { mutableStateOf(true) }
     var autoTryProviders by rememberSaveable { mutableStateOf(true) }
     var saveLrc by rememberSaveable { mutableStateOf(true) }            // default ON (Samsung-compatible)
     var embedLyrics by rememberSaveable { mutableStateOf(false) }       // default OFF
     var addUnsyncedFallback by rememberSaveable { mutableStateOf(false) } // default OFF (synced-only)
-    val count = successCount + failedCount + noLyricsCount
+    val count = successCount + failedCount + noLyricsCount + skippedCount
     val total = songs.size
+    // Songs the batch will actually process when skipExisting is on = those WITHOUT synced lyrics. UNSYNCED
+    // (a plain .lrc with no timestamps) is processable too — it was previously omitted, undercounting the warning.
     val songsWithoutLyrics = songs.count {
         val st = viewModel.lyricStateFor(it)
-        st == LyricState.NO_LYRICS || st == LyricState.FAILED
+        st == LyricState.NO_LYRICS || st == LyricState.FAILED || st == LyricState.UNSYNCED
     }
     val songsToProcess = if (skipExisting) songsWithoutLyrics else total
     val context = LocalContext.current
@@ -49,6 +52,7 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
             successCount = 0
             noLyricsCount = 0
             failedCount = 0
+            skippedCount = 0
             viewModel.batchDownloadLyrics(
                 context,
                 correctMetadata = correctMetadata,
@@ -57,10 +61,11 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
                 saveLrc = saveLrc,
                 embedLyrics = embedLyrics,
                 addUnsyncedFallback = addUnsyncedFallback,
-                onProgressUpdate = { newSuccessCount, newNoLyricsCount, newFailedCount ->
+                onProgressUpdate = { newSuccessCount, newNoLyricsCount, newFailedCount, newSkippedCount ->
                     successCount = newSuccessCount
                     noLyricsCount = newNoLyricsCount
                     failedCount = newFailedCount
+                    skippedCount = newSkippedCount
                 },
                 onDownloadComplete = { uiState = UiState.Done },
                 onRateLimitReached = { uiState = UiState.RateLimited }
@@ -113,13 +118,15 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
                 if (total != 0) (count.toFloat() / total.toFloat() * 100).roundToInt() else 0
 
             DownloadProgressDialog(
-                currentSongTitle = songs.getOrNull(count % total)?.title,
+                // Guard against total == 0 (empty batch): `count % 0` throws ArithmeticException and crashes.
+                currentSongTitle = songs.getOrNull(if (total > 0) count % total else 0)?.title,
                 count = count,
                 total = total,
                 percentage = percentage,
                 successCount = successCount,
                 noLyricsCount = noLyricsCount,
                 failedCount = failedCount,
+                skippedCount = skippedCount,
                 onCancel = { uiState = UiState.Cancelled },
                 disableMarquee = viewModel.userSettingsController.disableMarquee
             )
@@ -129,6 +136,7 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
             successCount = successCount,
             noLyricsCount = noLyricsCount,
             failedCount = failedCount,
+            skippedCount = skippedCount,
             onDismiss = { uiState = UiState.Cancelled }
         )
 

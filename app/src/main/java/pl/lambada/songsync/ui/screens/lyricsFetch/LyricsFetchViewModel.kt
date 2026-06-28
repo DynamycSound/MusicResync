@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import pl.lambada.songsync.R
 import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
@@ -82,15 +83,18 @@ class LyricsFetchViewModel(
         }
     }
 
-    private suspend fun getSyncedLyrics(title: String, artist: String): String? =
-        lyricsProviderService.getSyncedLyrics(
-            title,
-            artist,
-            userSettingsController.selectedProvider,
+    private suspend fun getSyncedLyrics(title: String, artist: String): String? {
+        // Resolve then fetch from the same SongInfo so the provider token never comes from shared state.
+        val provider = userSettingsController.selectedProvider
+        val info = lyricsProviderService.getSongInfo(SongInfo(title, artist), provider = provider) ?: return null
+        return lyricsProviderService.getSyncedLyrics(
+            info,
+            provider,
             userSettingsController.includeTranslation,
             userSettingsController.includeRomanization,
             userSettingsController.multiPersonWordByWord,
         )
+    }
 
     private val matcher = SmartLyricsMatcher(providerService = lyricsProviderService)
 
@@ -114,9 +118,12 @@ class LyricsFetchViewModel(
                 val order = (listOf(userSettingsController.selectedProvider) +
                         Providers.entries.filter { it != userSettingsController.selectedProvider }).distinct()
 
+                // Track which providers the search actually reached. The ladder can stop early (auto-accept), so
+                // the rest are genuinely UNTRIED — not failures — and must not be painted with a red X.
+                val attempted = linkedSetOf<Providers>()
                 val hits = matcher.search(
                     local, candidates, MatchConfig(providerOrder = order),
-                    onAttempt = { provider -> searchStatus = provider; providerProbes[provider] = ProviderProbe.LOADING }
+                    onAttempt = { provider -> searchStatus = provider; attempted.add(provider); providerProbes[provider] = ProviderProbe.LOADING }
                 )
                 searchStatus = null
 
@@ -130,8 +137,16 @@ class LyricsFetchViewModel(
                     if (!l.isNullOrBlank()) { chosen = hit; lyrics = l; break }
                 }
 
-                // Record per-provider probe outcomes for the cloud-icon dropdown.
-                order.forEach { p -> providerProbes[p] = if (p == chosen?.provider) ProviderProbe.HAS_SYNCED else ProviderProbe.NONE }
+                // Record per-provider probe outcomes for the cloud-icon dropdown: the winner is HAS_SYNCED,
+                // providers we actually reached but that had nothing are NONE, and everything past the early stop
+                // stays UNTRIED instead of being mislabelled as failed.
+                order.forEach { p ->
+                    providerProbes[p] = when {
+                        p == chosen?.provider -> ProviderProbe.HAS_SYNCED
+                        p in attempted -> ProviderProbe.NONE
+                        else -> ProviderProbe.UNTRIED
+                    }
+                }
 
                 if (chosen != null && lyrics != null) {
                     activeProvider = chosen.provider
@@ -244,9 +259,14 @@ class LyricsFetchViewModel(
             showToast(context, context.getString(R.string.embed_non_local_song_error)); return
         }
         viewModelScope.launch(Dispatchers.IO) {
+            // Network download + TagLib write stay on IO; the UI-state flip and the Toast must run on Main.
+            // showToast calls Toast.show() directly, which crashes ("can't toast on a thread that has not called
+            // Looper.prepare()") when invoked from an IO worker thread.
             val ok = embedCoverInFile(context, path, url)
-            localHasCover = ok || localHasCover == true
-            showToast(context, context.getString(if (ok) R.string.thumbnail_saved else R.string.error))
+            withContext(Dispatchers.Main) {
+                localHasCover = ok || localHasCover == true
+                showToast(context, context.getString(if (ok) R.string.thumbnail_saved else R.string.error))
+            }
         }
     }
 
@@ -328,8 +348,11 @@ class LyricsFetchViewModel(
             )
         }.onFailure { exception ->
             showToast(context, resolveEmbedErrorMessage(context, exception))
-        }.onSuccess {
-            showToast(context, R.string.embedded_lyrics_in_file)
+        }.onSuccess { embedded ->
+            // embedLyricsInFile returns false (without throwing) when the tag write fails or is denied — don't
+            // claim success in that case.
+            if (embedded) showToast(context, R.string.embedded_lyrics_in_file)
+            else showToast(context, context.getString(R.string.error))
         }
     }
 
@@ -369,5 +392,11 @@ sealed interface QueryStatus {
     data object NoConnection : QueryStatus
 }
 
-/** Outcome of probing one provider for the current song, shown in the cloud-icon dropdown. */
-enum class ProviderProbe { LOADING, HAS_SYNCED, NONE }
+/**
+ * Outcome of probing one provider for the current song, shown in the cloud-icon dropdown.
+ *  - [LOADING]    a fetch is in flight
+ *  - [HAS_SYNCED] this provider produced the synced lyrics
+ *  - [NONE]       attempted but had no synced lyrics
+ *  - [UNTRIED]    never attempted (e.g. the search auto-accepted earlier and stopped) — NOT a failure
+ */
+enum class ProviderProbe { LOADING, HAS_SYNCED, NONE, UNTRIED }

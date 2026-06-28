@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,7 +57,9 @@ fun SharedTransitionScope.SongCard(
             inner = modifier
         )
     ) {
-        Row(modifier = Modifier.height(72.dp)) {
+        // heightIn(min) instead of a hard height: the card keeps its 72dp baseline but can grow a touch when a
+        // larger font scale needs it, so the artist line can't be clipped against a fixed bottom edge.
+        Row(modifier = Modifier.heightIn(min = 72.dp)) {
             if (coverUrl != null) {
                 val painter = rememberAsyncImagePainter(
                     ImageRequest.Builder(LocalContext.current).data(data = coverUrl)
@@ -97,11 +100,13 @@ fun SharedTransitionScope.SongCard(
             Spacer(modifier = Modifier.width(2.dp))
             Column(
                 // weight(1f) gives the text the full remaining width so a long artist isn't clipped to a
-                // narrow column (marquee/ellipsis then operates over the whole card width).
+                // narrow column (marquee/ellipsis then operates over the whole card width). Centre the two lines
+                // vertically with a small fixed gap instead of pushing the artist flush to the bottom with a
+                // weighted spacer, which used to clip the artist's descenders against the bottom padding.
                 modifier = Modifier
                     .weight(1f)
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.Top
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.Center
             ) {
                 AnimatedText(
                     text = songName,
@@ -113,7 +118,7 @@ fun SharedTransitionScope.SongCard(
                         animatedVisibilityScope = animatedVisibilityScope
                     )
                 )
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.height(2.dp))
                 AnimatedText(
                     text = artists.ifBlank { unknownArtistString },
                     fontSize = 14.sp,

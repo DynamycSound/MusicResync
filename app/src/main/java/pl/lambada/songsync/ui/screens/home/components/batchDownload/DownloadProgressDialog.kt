@@ -18,6 +18,7 @@ fun DownloadProgressDialog(
     successCount: Int,
     noLyricsCount: Int,
     failedCount: Int,
+    skippedCount: Int,
     onCancel: () -> Unit,
     disableMarquee: Boolean,
 ) {
@@ -41,6 +42,7 @@ fun DownloadProgressDialog(
                         R.string.success_failed, successCount, noLyricsCount, failedCount
                     )
                 )
+                if (skippedCount > 0) Text(text = stringResource(R.string.skipped, skippedCount))
                 Text(text = stringResource(R.string.please_do_not_close_the_app_this_may_take_a_while))
             }
         },

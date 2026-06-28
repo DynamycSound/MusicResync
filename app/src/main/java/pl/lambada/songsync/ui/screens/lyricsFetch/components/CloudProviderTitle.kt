@@ -80,6 +80,10 @@ private fun ProbeStatusIcon(probe: ProviderProbe?) {
             Icons.Filled.Close, contentDescription = "No lyrics",
             tint = Color(0xFFC62828), modifier = Modifier.size(20.dp)
         )
-        null -> {} // untried — no marker
+        ProviderProbe.UNTRIED -> Text(
+            text = "?",
+            color = Color(0xFF9E9E9E), // muted — "not tried yet", explicitly not a failure
+        )
+        null -> {} // no info yet — no marker
     }
 }

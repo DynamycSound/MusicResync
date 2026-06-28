@@ -128,7 +128,7 @@ fun BatchDownloadWarningDialog(
 
                         SwitchItem(
                             label = stringResource(R.string.add_unsynced_if_no_synced),
-                            description = stringResource(R.string.add_unsynced_if_no_synced),
+                            description = stringResource(R.string.add_unsynced_if_no_synced_desc),
                             selected = addUnsyncedFallback,
                             modifier = Modifier,
                             innerPaddingValues = rowPadding,

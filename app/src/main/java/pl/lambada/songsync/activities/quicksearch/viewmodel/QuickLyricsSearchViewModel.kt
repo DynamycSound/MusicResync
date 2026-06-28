@@ -106,15 +106,18 @@ class QuickLyricsSearchViewModel(
         }
     }
 
-    private suspend fun getSyncedLyrics(title: String, artist: String): String? =
-        lyricsProviderService.getSyncedLyrics(
-            title,
-            artist,
-            userSettingsController.selectedProvider,
+    private suspend fun getSyncedLyrics(title: String, artist: String): String? {
+        // Resolve then fetch from the same SongInfo so the provider token never comes from shared state.
+        val provider = userSettingsController.selectedProvider
+        val info = lyricsProviderService.getSongInfo(SongInfo(title, artist), provider = provider) ?: return null
+        return lyricsProviderService.getSyncedLyrics(
+            info,
+            provider,
             userSettingsController.includeTranslation,
             userSettingsController.includeRomanization,
             userSettingsController.multiPersonWordByWord,
         )
+    }
 
     private fun updateScreenState(screenState: ScreenState<SongInfo>) {
         if (screenState != mutableState.value.screenState) {

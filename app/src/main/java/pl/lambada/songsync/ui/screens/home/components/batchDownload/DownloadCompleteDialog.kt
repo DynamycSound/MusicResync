@@ -13,6 +13,7 @@ fun DownloadCompleteDialog(
     successCount: Int,
     noLyricsCount: Int,
     failedCount: Int,
+    skippedCount: Int,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -23,6 +24,7 @@ fun DownloadCompleteDialog(
             Column {
                 Text(text = stringResource(R.string.download_complete))
                 Text(text = stringResource(R.string.success, successCount))
+                if (skippedCount > 0) Text(text = stringResource(R.string.skipped, skippedCount))
                 Text(text = stringResource(R.string.no_lyrics, noLyricsCount))
                 Text(text = stringResource(R.string.failed, failedCount))
             }

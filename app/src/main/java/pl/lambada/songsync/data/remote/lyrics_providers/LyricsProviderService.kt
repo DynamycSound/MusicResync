@@ -23,26 +23,16 @@ class LyricsProviderService {
     // Spotify API token
     private val spotifyAPI = SpotifyAPI()
 
-    // Spotify Track Url
-    private var spotifyUrl = ""
-
-    // LRCLib Track ID
-    private var lrcLibID = 0
-
-    // QQMusic request payload
-    private var qqPayload = ""
-
-    // Netease Track ID and stuff
-    private var neteaseID = 0L
-    
     // Apple API
     private val appleAPI = AppleAPI()
-    
-    // Apple Track ID
-    private var appleID = 0L
 
     // Internal last-resort canonicalizer (iTunes/Deezer) — also a source of extra cover art.
     private val lastResortAPI = LastResortAPI()
+
+    // NOTE: this service holds NO per-request mutable state. The provider-specific lookup tokens (Spotify link,
+    // LRCLib id, Netease id, QQ payload, Apple id) travel on the SongInfo returned by getSongInfo and are passed
+    // back explicitly into getSyncedLyrics. The previous design stashed them in shared fields, so two overlapping
+    // lookups on the same instance could read each other's token. Keeping the flow stateless removes that race.
 
     /**
      * Refreshes the access token by sending a request to the Spotify API.
@@ -66,26 +56,14 @@ class LyricsProviderService {
     )
     suspend fun getSongInfo(query: SongInfo, offset: Int = 0, provider: Providers): SongInfo? {
         return try {
+            // Each provider populates its own lookup token directly on the returned SongInfo (songLink/lrcLibID/
+            // neteaseID/qqPayload/appleID), so the caller can hand the same SongInfo back to getSyncedLyrics.
             when (provider) {
-                Providers.SPOTIFY -> spotifyAPI.getSongInfo(query, offset).also {
-                    spotifyUrl = it?.songLink ?: ""
-                } ?: throw NoTrackFoundException()
-                
-                Providers.LRCLIB -> LRCLibAPI().getSongInfo(query, offset).also {
-                    lrcLibID = it?.lrcLibID ?: 0
-                } ?: throw NoTrackFoundException()
-
-                Providers.NETEASE -> NeteaseAPI().getSongInfo(query, offset).also {
-                    neteaseID = it?.neteaseID ?: 0
-                } ?: throw NoTrackFoundException()
-
-                Providers.QQMUSIC -> QQMusicAPI().getSongInfo(query, offset).also {
-                    qqPayload = it?.qqPayload ?: ""
-                } ?: throw NoTrackFoundException()
-
-                Providers.APPLE -> appleAPI.getSongInfo(query, offset).also {
-                    appleID = it?.appleID ?: 0
-                } ?: throw NoTrackFoundException()
+                Providers.SPOTIFY -> spotifyAPI.getSongInfo(query, offset) ?: throw NoTrackFoundException()
+                Providers.LRCLIB -> LRCLibAPI().getSongInfo(query, offset) ?: throw NoTrackFoundException()
+                Providers.NETEASE -> NeteaseAPI().getSongInfo(query, offset) ?: throw NoTrackFoundException()
+                Providers.QQMUSIC -> QQMusicAPI().getSongInfo(query, offset) ?: throw NoTrackFoundException()
+                Providers.APPLE -> appleAPI.getSongInfo(query, offset) ?: throw NoTrackFoundException()
             }
         } catch (e: Exception) {
             when (e) {
@@ -127,13 +105,14 @@ class LyricsProviderService {
     }
 
     /**
-     * Gets synced lyrics using the song link and returns them as a string formatted as an LRC file.
-     * @param songLink The link to the song.
-     * @return The synced lyrics as a string.
+     * Gets synced lyrics for an already-resolved [song] (the SongInfo returned by [getSongInfo], carrying the
+     * provider-specific lookup token) and returns them formatted as an LRC string. Stateless: the token comes
+     * from [song], not from shared fields, so concurrent lookups can't clobber each other.
+     * @param song The resolved SongInfo whose provider token (songLink/lrcLibID/neteaseID/qqPayload/appleID) is set.
+     * @return The synced lyrics as a string, or null.
      */
     suspend fun getSyncedLyrics(
-        songTitle: String,
-        artistName: String,
+        song: SongInfo,
         provider: Providers,
         // TODO providers could be a sealed interface to include such parameters
         includeTranslationNetEase: Boolean = false,
@@ -141,16 +120,16 @@ class LyricsProviderService {
         multiPersonWordByWord: Boolean = false,
     ): String? {
         return when (provider) {
-            Providers.SPOTIFY -> SpotifyLyricsAPI().getSyncedLyrics(spotifyUrl)
-            Providers.LRCLIB -> LRCLibAPI().getSyncedLyrics(lrcLibID)
+            Providers.SPOTIFY -> SpotifyLyricsAPI().getSyncedLyrics(song.songLink ?: "")
+            Providers.LRCLIB -> LRCLibAPI().getSyncedLyrics(song.lrcLibID ?: 0)
             Providers.NETEASE -> NeteaseAPI().getSyncedLyrics(
-                neteaseID, includeTranslationNetEase, includeRomanizationNetEase
+                song.neteaseID ?: 0L, includeTranslationNetEase, includeRomanizationNetEase
             )
 
-            Providers.QQMUSIC -> QQMusicAPI().getSyncedLyrics(qqPayload, multiPersonWordByWord)
+            Providers.QQMUSIC -> QQMusicAPI().getSyncedLyrics(song.qqPayload ?: "", multiPersonWordByWord)
 
             Providers.APPLE -> appleAPI.getSyncedLyrics(
-                appleID, multiPersonWordByWord
+                song.appleID ?: 0L, multiPersonWordByWord
             )
         }
     }

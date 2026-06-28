@@ -32,7 +32,6 @@ import pl.lambada.songsync.domain.model.SortOrders
 import pl.lambada.songsync.domain.model.SortValues
 import pl.lambada.songsync.util.cache.SongCache
 import pl.lambada.songsync.util.downloadLyrics
-import pl.lambada.songsync.util.ext.toLrcFile
 import pl.lambada.songsync.util.matching.LrcPrescan
 import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.matching.PrescanResult
@@ -117,7 +116,9 @@ class HomeViewModel(
 
     val songsToBatchDownload by derivedStateOf {
         if (selectedSongs.isEmpty())
-            displaySongs
+            // No explicit selection -> operate on exactly what the user currently sees, which includes the active
+            // tab filter (All / Has lyrics / No lyrics), not just the search/folder-filtered displaySongs.
+            tabFilteredSongs
         else
             (allSongs ?: listOf()).filter { selectedSongs.contains(it.filePath) }.toList()
     }
@@ -145,8 +146,9 @@ class HomeViewModel(
     fun updateAllSongs(context: Context, sortBy: SortValues, sortOrder: SortOrders) = viewModelScope.launch(Dispatchers.IO) {
         // getAllSongs seeds row state instantly from the persistent cache, so the list renders immediately.
         allSongs = getAllSongs(context, sortBy, sortOrder)
-        // Then verify against disk in the background and replace the cached state with the fresh truth.
-        refreshLyricStatesFromDisk()
+        // Then verify against disk and replace the cached state with the fresh truth. Awaited so this job only
+        // completes once the disk re-scan is done — pull-to-refresh joins it to time the spinner to real work.
+        refreshLyricStatesFromDisk()?.join()
     }
 
     /**
@@ -163,10 +165,10 @@ class HomeViewModel(
         }
     }
 
-    fun refreshLyricStatesFromDisk() {
-        if (batchRunning) return // don't clobber in-flight FETCHING/SYNCED states while a batch is saving
-        val songs = cachedSongs ?: return
-        viewModelScope.launch(Dispatchers.IO) {
+    fun refreshLyricStatesFromDisk(): kotlinx.coroutines.Job? {
+        if (batchRunning) return null // don't clobber in-flight FETCHING/SYNCED states while a batch is saving
+        val songs = cachedSongs ?: return null
+        return viewModelScope.launch(Dispatchers.IO) {
             val results = LrcPrescan.scan(songs.mapNotNull { it.filePath })
             val states = results.mapValues { (_, r) ->
                 when (r) {
@@ -188,6 +190,10 @@ class HomeViewModel(
      */
     private fun getAllSongs(context: Context, sortBy: SortValues, sortOrder: SortOrders): List<Song> {
         return cachedSongs ?: run {
+            // Rebuilding the song list (cachedSongs was invalidated, e.g. a sort change or refresh) makes the
+            // derived folder list stale too — drop it so getSongFolders re-derives from the fresh songs instead
+            // of serving folders for a library that may have changed.
+            cachedFolders = null
             val selection = MediaStore.Audio.Media.IS_MUSIC + "!= 0"
             val projection = arrayOf(
                 MediaStore.Audio.Media._ID,
@@ -313,40 +319,31 @@ class HomeViewModel(
      * Filter songs based on user's preferences.
      * @return A list of songs depending on the user's preferences. If no preferences are set, null is returned, so app will use all songs.
      */
-    fun filterSongs() = viewModelScope.launch {
+    fun filterSongs() = viewModelScope.launch(Dispatchers.IO) {
         hideFolders = userSettingsController.blacklistedFolders.isNotEmpty()
+        val songs = cachedSongs ?: run { _cachedFilteredSongs.value = emptyList(); return@launch }
 
-        when {
-            userSettingsController.hideLyrics && hideFolders -> {
-                _cachedFilteredSongs.value = cachedSongs!!
-                    .filter {
-                        it.filePath.toLrcFile()?.exists() != true && !userSettingsController.blacklistedFolders.contains(
-                            it.filePath!!.substring(
-                                0, it.filePath.lastIndexOf("/")
-                            )
-                        )
-                    }
-            }
+        // "Hide songs with lyrics" filters on the resolved lyric STATE (seeded from cache, refreshed off-disk),
+        // not on raw .lrc file existence. This keeps it consistent with the tabs and songHasLyrics(): a plain
+        // (UNSYNCED) .lrc counts as "no real synced lyrics", so such a song is NOT hidden and still shows under
+        // "No lyrics". It also drops the per-song disk stat that used to run here.
+        fun notBlacklisted(song: Song): Boolean {
+            val path = song.filePath ?: return true
+            val folder = path.substring(0, path.lastIndexOf("/"))
+            return !userSettingsController.blacklistedFolders.contains(folder)
+        }
 
-            userSettingsController.hideLyrics -> {
-                _cachedFilteredSongs.value = cachedSongs!!
-                    .filter { it.filePath.toLrcFile()?.exists() != true }
-            }
+        _cachedFilteredSongs.value = when {
+            userSettingsController.hideLyrics && hideFolders ->
+                songs.filter { !songHasLyrics(it) && notBlacklisted(it) }
 
-            hideFolders -> {
-                _cachedFilteredSongs.value = cachedSongs!!.filter {
-                    !userSettingsController.blacklistedFolders.contains(
-                        it.filePath!!.substring(
-                            0,
-                            it.filePath.lastIndexOf("/")
-                        )
-                    )
-                }
-            }
+            userSettingsController.hideLyrics ->
+                songs.filter { !songHasLyrics(it) }
 
-            else -> {
-                _cachedFilteredSongs.value = emptyList()
-            }
+            hideFolders ->
+                songs.filter { notBlacklisted(it) }
+
+            else -> emptyList()
         }
     }
 
@@ -382,10 +379,13 @@ class HomeViewModel(
 
     suspend fun getSyncedLyrics(title: String, artist: String): String? {
         return try {
+            // Self-contained two-step: resolve the SongInfo (with its provider token) and immediately fetch its
+            // lyrics from that same object, so nothing relies on shared provider-service state.
+            val provider = userSettingsController.selectedProvider
+            val info = lyricsProviderService.getSongInfo(SongInfo(title, artist), provider = provider) ?: return null
             lyricsProviderService.getSyncedLyrics(
-                title,
-                artist,
-                provider = userSettingsController.selectedProvider,
+                info,
+                provider = provider,
                 includeTranslationNetEase = userSettingsController.includeTranslation,
                 includeRomanizationNetEase = userSettingsController.includeRomanization,
                 multiPersonWordByWord = userSettingsController.multiPersonWordByWord,
@@ -418,12 +418,16 @@ class HomeViewModel(
         saveLrc: Boolean = true,
         embedLyrics: Boolean = false,
         addUnsyncedFallback: Boolean = false,
-        onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int) -> Unit,
+        onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int, skippedCount: Int) -> Unit,
         onDownloadComplete: () -> Unit,
         onRateLimitReached: () -> Unit
     ): kotlinx.coroutines.Job {
         batchRunning = true
-        val job = viewModelScope.launch {
+        // Run the whole batch off the main thread. downloadLyrics does blocking per-song work on the calling
+        // dispatcher — disk I/O (toLrcFile().exists(), isSyncedLrc, writeText), TagLib embedding, and JSON
+        // decoding — so launching it on the default (Main) dispatcher froze the UI for the entire run. The
+        // progress callbacks below only write Compose snapshot state, which is safe to update off the main thread.
+        val job = viewModelScope.launch(Dispatchers.IO) {
             downloadLyrics(
                 songs = songsToBatchDownload,
                 viewModel = this@HomeViewModel,

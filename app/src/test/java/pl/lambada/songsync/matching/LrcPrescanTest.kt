@@ -63,6 +63,21 @@ class LrcPrescanTest {
     }
 
     @Test
+    fun `unsynced private file is renamed but reported as unsynced not synced`() {
+        val stem = "Lecrae - Background (Audio)(MP3_320K)"
+        val mp3 = audio(stem)
+        // A _private file that is plain text (no timestamps).
+        lrc("${stem}_private", content = "just some plain lyrics\nno timestamps here\n")
+
+        val result = LrcPrescan.resolveForAudio(mp3.path)
+
+        // It is renamed into place, but must NOT be reported as a synced rescue.
+        assertEquals(PrescanResult.ALREADY_PRESENT_UNSYNCED, result)
+        assertTrue("bare .lrc should now exist", File(tmp.root, "$stem.lrc").exists())
+        assertFalse("renamed file is not synced", LrcPrescan.isSyncedLrc(File(tmp.root, "$stem.lrc")))
+    }
+
+    @Test
     fun `song with no lyrics returns NONE`() {
         val mp3 = audio("Coby - Septembar")
         assertEquals(PrescanResult.NONE, LrcPrescan.resolveForAudio(mp3.path))

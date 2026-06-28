@@ -48,7 +48,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import pl.lambada.songsync.R
 import pl.lambada.songsync.domain.model.Song
@@ -202,8 +201,9 @@ fun HomeScreenLoaded(
             viewModel.isRefreshing = true
             scope.launch {
                 viewModel.cachedSongs = null
-                viewModel.updateAllSongs(context, viewModel.userSettingsController.sortBy, viewModel.userSettingsController.sortOrder)
-                delay(1000) // spinner
+                // Tie the spinner to the actual reload (MediaStore query + disk lyric re-scan) by joining the
+                // job, instead of a fixed delay(1000) that lied about completion.
+                viewModel.updateAllSongs(context, viewModel.userSettingsController.sortBy, viewModel.userSettingsController.sortOrder).join()
                 viewModel.isRefreshing = false
             }
         },

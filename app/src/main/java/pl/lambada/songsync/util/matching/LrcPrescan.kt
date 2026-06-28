@@ -9,7 +9,8 @@ enum class PrescanResult {
     /** A valid synced `<stem>.lrc` already sits next to the audio. Nothing to do. */
     ALREADY_SYNCED,
 
-    /** A `<stem>_private.lrc` (or `<stem>_N_private.lrc`) was found and renamed to `<stem>.lrc`. */
+    /** A SYNCED `<stem>_private.lrc` (or `<stem>_N_private.lrc`) was found and renamed to `<stem>.lrc`. A renamed
+     *  but unsynced private file is reported as [ALREADY_PRESENT_UNSYNCED] instead, so it isn't shown as synced. */
     RENAMED_FROM_PRIVATE,
 
     /**
@@ -79,7 +80,12 @@ object LrcPrescan {
             best.copyTo(target, overwrite = true); best.delete(); true
         }.getOrDefault(false)
 
-        return if (moved) PrescanResult.RENAMED_FROM_PRIVATE else PrescanResult.NONE
+        if (!moved) return PrescanResult.NONE
+        // Re-check the renamed target: a `_private` file can be plain (unsynced). Only report it as a synced
+        // rescue when it actually carries timestamps; otherwise it's an unsynced lyrics file and must NOT be
+        // coloured green as if it had synced lyrics.
+        return if (isSyncedLrc(target)) PrescanResult.RENAMED_FROM_PRIVATE
+        else PrescanResult.ALREADY_PRESENT_UNSYNCED
     }
 
     /** Private-suffixed lyrics files that belong to [stem], plain `_private` first then numbered ones. */

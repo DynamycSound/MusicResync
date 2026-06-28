@@ -66,6 +66,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import pl.lambada.songsync.R
 import pl.lambada.songsync.util.applyOffsetToLyrics
+import pl.lambada.songsync.util.buildNeutralLrc
+import pl.lambada.songsync.util.parseOffsetTagMs
+import pl.lambada.songsync.util.upsertOffsetTag
 import pl.lambada.songsync.util.cache.SongCache
 import pl.lambada.songsync.util.cache.SongCacheEntry
 import pl.lambada.songsync.util.matching.LyricState
@@ -76,6 +79,9 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 private data class LyricLine(val timeMs: Long, val text: String)
+
+/** Half-width of the stable, absolute offset slider range (±10s). A saved -3.9s sits visibly left of centre. */
+private const val OFFSET_RANGE_MS = 10000f
 
 private val timestamp = Regex("""\[(\d{1,2}):(\d{2})[.:](\d{1,3})]""")
 
@@ -116,6 +122,8 @@ fun SyncedLyricsPlayerScreen(
     /** When arriving from "Adjust timing", the (not-yet-saved) lyrics are passed here so nothing is written
      *  until the user presses the checkmark. Null when opening an already-saved song from Home. */
     initialLyrics: String? = null,
+    /** User setting: true bakes the offset into timestamps on save; false writes an `[offset:]` tag instead. */
+    directlyModifyTimestamps: Boolean = false,
 ) {
     val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
@@ -126,7 +134,17 @@ fun SyncedLyricsPlayerScreen(
             }.getOrNull().orEmpty()
         )
     }
-    val lines = remember(lrcText) { parseSyncedLrc(lrcText) }
+    // Reconcile the two timing models into one neutral form (zero applied offset, no [offset:] tag) so all the
+    // preview/seek/save math can treat the user's offset as a single absolute value. A file in tag mode carries
+    // [offset:N]; a direct-shifted file has the offset baked into its timestamps and we undo it here.
+    val fileOffsetMs = remember(lrcText) { parseOffsetTagMs(lrcText) }
+    val cachedOffsetMs = remember(filePath) { SongCache.get(filePath)?.offsetMs ?: 0 }
+    val fileUsesOffsetTag = fileOffsetMs != 0
+    val baseAppliedOffsetMs = if (fileUsesOffsetTag) fileOffsetMs else cachedOffsetMs
+    val neutralLrc = remember(lrcText, baseAppliedOffsetMs, fileUsesOffsetTag) {
+        buildNeutralLrc(lrcText, baseAppliedOffsetMs, fileUsesOffsetTag)
+    }
+    val lines = remember(neutralLrc) { parseSyncedLrc(neutralLrc) }
 
     val player = remember {
         MediaPlayer().apply {
@@ -136,12 +154,12 @@ fun SyncedLyricsPlayerScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var positionMs by remember { mutableIntStateOf(0) }
     val durationMs = remember { runCatching { player.duration }.getOrDefault(0) }
-    // The offset already baked into the on-disk .lrc (remembered across launches). The slider opens at this
-    // value; only the *delta* the user adds on top is applied to the file on save.
-    var storedOffset by remember(filePath) {
-        mutableIntStateOf(SongCache.get(filePath)?.offsetMs ?: 0)
+    // Absolute offset (ms) applied on top of the neutral lyrics. Opens at whatever was already applied to the
+    // file (its tag value, or the remembered cache value), coerced into the slider range. Because the lyrics are
+    // neutral, this is the single source of truth for preview, seek and save — no delta bookkeeping.
+    var offsetMs by remember(filePath) {
+        mutableFloatStateOf(baseAppliedOffsetMs.toFloat().coerceIn(-OFFSET_RANGE_MS, OFFSET_RANGE_MS))
     }
-    var offsetMs by remember(filePath) { mutableFloatStateOf(storedOffset.toFloat()) }
 
     DisposableEffect(Unit) {
         onDispose { runCatching { player.release() } }
@@ -168,21 +186,30 @@ fun SyncedLyricsPlayerScreen(
     }
 
     // Persists the lyrics with the chosen timing, remembers the total offset for next time, marks the song as
-    // having lyrics, and returns to Home (where the row now shows a green note). Only the delta on top of the
-    // already-baked [storedOffset] is applied, so re-saving never double-shifts.
+    // having lyrics, and returns to Home (where the row now shows a green note). Always rebuilds from the neutral
+    // lyrics (zero applied offset, no [offset:] tag) and applies the absolute slider value once, so re-saving can
+    // never double-shift. The on-disk model follows the user's setting:
+    //   directlyModifyTimestamps == true  -> bake the offset into the timestamps, no [offset:] tag
+    //   directlyModifyTimestamps == false -> keep neutral timestamps + exactly one [offset:] tag
     fun saveSync() {
         val total = offsetMs.roundToInt()
-        val delta = total - storedOffset
         val file = File(filePath.substringBeforeLast('.') + ".lrc")
-        val base = lrcText.ifBlank {
-            runCatching { file.takeIf { it.exists() }?.readText() }.getOrNull().orEmpty()
+        val neutralBase = neutralLrc.ifBlank {
+            runCatching { file.takeIf { it.exists() }?.readText() }.getOrNull()
+                ?.let { buildNeutralLrc(it, parseOffsetTagMs(it).let { tag -> if (tag != 0) tag else cachedOffsetMs }, parseOffsetTagMs(it) != 0) }
+                .orEmpty()
         }
-        if (base.isBlank()) { onBack(); return }
+        if (neutralBase.isBlank()) { onBack(); return }
         runCatching {
-            val shifted = if (delta != 0) applyOffsetToLyrics(base, delta) else base
-            file.writeText(shifted.toCrlf())
-            lrcText = shifted
-            storedOffset = total
+            val output = if (directlyModifyTimestamps) {
+                // Bake the shift into the timestamps; ensure no stray offset tag remains.
+                if (total != 0) applyOffsetToLyrics(neutralBase, total) else neutralBase
+            } else {
+                // Neutral timestamps + a single offset tag carrying the absolute value.
+                upsertOffsetTag(neutralBase, total)
+            }
+            file.writeText(output.toCrlf())
+            lrcText = output
             // Remember the offset + that this song now has (synced) lyrics, keeping any provider memory.
             SongCache.update(filePath) { prev ->
                 (prev ?: SongCacheEntry(LyricState.HAS_LYRICS)).copy(state = LyricState.HAS_LYRICS, offsetMs = total)
@@ -208,9 +235,8 @@ fun SyncedLyricsPlayerScreen(
     val currentIndex by remember {
         derivedStateOf {
             if (lines.isEmpty()) 0
-            // Only the *additional* nudge (beyond what's already baked into the loaded .lrc) shifts the preview,
-            // so an already-offset song isn't double-shifted on screen.
-            else lines.indexOfLast { it.timeMs <= positionMs + (offsetMs.roundToInt() - storedOffset) }.coerceAtLeast(0)
+            // Lyrics are neutral, so the slider value is the effective absolute offset applied to the preview.
+            else lines.indexOfLast { it.timeMs <= positionMs + offsetMs.roundToInt() }.coerceAtLeast(0)
         }
     }
     LaunchedEffect(currentIndex) {
@@ -318,8 +344,8 @@ fun SyncedLyricsPlayerScreen(
                                         transformOrigin = TransformOrigin(0f, 0.5f)
                                     }
                                     .clickable {
-                                        // tap a line to jump the track to it
-                                        val seekTo = max(0, lines[i].timeMs.toInt() - (offsetMs.roundToInt() - storedOffset))
+                                        // tap a line to jump the track to it (lyrics neutral -> absolute offset)
+                                        val seekTo = max(0, lines[i].timeMs.toInt() - offsetMs.roundToInt())
                                         runCatching { player.seekTo(seekTo) }
                                         positionMs = seekTo
                                         if (!player.isPlaying) { player.start(); isPlaying = true }
@@ -361,8 +387,9 @@ fun SyncedLyricsPlayerScreen(
                         value = offsetMs,
                         onValueChange = { offsetMs = it },
                         onValueChangeFinished = { applyOffsetSeek() },
-                        // ±5s around whatever offset is already remembered, so a saved nudge can still be tuned.
-                        valueRange = (storedOffset - 5000f)..(storedOffset + 5000f),
+                        // Stable, absolute range so a saved offset shows at its true position (e.g. -3.9s sits
+                        // left of centre) instead of always appearing centred.
+                        valueRange = -OFFSET_RANGE_MS..OFFSET_RANGE_MS,
                         modifier = Modifier.weight(1f)
                     )
                 }

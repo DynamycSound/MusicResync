@@ -15,7 +15,7 @@
     <string name="all_songs_have_lyrics">All songs already have lyrics. Turn off \"Skip existing\" to re-fetch.</string>
     <string name="advanced">Advanced</string>
     <string name="auto_try_providers">Auto-try other providers</string>
-    <string name="auto_try_providers_desc">If a song isn\'t found, automatically try the other providers before giving up</string>
+    <string name="auto_try_providers_desc">More thorough but slower: if a song isn\'t found on the selected provider, try the others (Netease, Apple, Spotify, QQ) before giving up. Turn off for a fast LRCLib-only pass.</string>
     <string name="private_lrc_note">Snaptube downloads: a matching .lrc with a \"_private\" suffix is detected automatically and the suffix removed so players can see it — no fetch needed.</string>
     <string name="confidence_verify">Please verify</string>
     <string name="searching">Searching…</string>
@@ -23,6 +23,7 @@
     <string name="no_synced_lyrics_found">No synced lyrics found for this song.</string>
     <string name="add_plain_lyrics">Add plain lyrics</string>
     <string name="add_unsynced_if_no_synced">Add unsynced lyrics if no synced is available</string>
+    <string name="add_unsynced_if_no_synced_desc">When no synced (timestamped) lyrics can be found, save plain unsynced lyrics instead of leaving the song without any</string>
     <string name="change_thumbnail">Change thumbnail</string>
     <string name="add_thumbnail">Add thumbnail</string>
     <string name="thumbnail_saved">Thumbnail saved</string>
@@ -48,7 +49,8 @@
     <string name="success_failed">Success: %1$d, No lyrics: %2$d, Failed: %3$d</string>
     <string name="please_do_not_close_the_app_this_may_take_a_while">Please do not close the app, this may take a while</string>
     <string name="download_complete">Download complete</string>
-    <string name="success">Success: %1$d</string>
+    <string name="success">Downloaded: %1$d</string>
+    <string name="skipped">Skipped (already synced): %1$d</string>
     <string name="failed">Failed: %1$d</string>
     <string name="spotify_api_rate_limit_reached">Spotify API rate limit reached</string>
     <string name="please_try_again_later">Please try again later</string>

@@ -93,7 +93,10 @@ class MainActivity : ComponentActivity() {
 private fun MainActivity.CheckForPermissions(
     userSettingsController: UserSettingsController
 ) {
-    if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
+    // All-Files-Access (MANAGE_EXTERNAL_STORAGE / isExternalStorageManager) applies from API 30 (Android 11 = R)
+    // upward — same threshold the init flow uses (InitScreenViewModel / AllFilesAccess). The previous `> R` left
+    // Android 11 itself out, wrongly routing it to the legacy runtime-permission branch.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         if (!Environment.isExternalStorageManager()) {
             userSettingsController.updatePassedInit(false)
         }

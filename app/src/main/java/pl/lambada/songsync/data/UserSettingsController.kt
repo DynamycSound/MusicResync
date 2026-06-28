@@ -7,69 +7,86 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import pl.lambada.songsync.domain.model.SortOrders
 import pl.lambada.songsync.domain.model.SortValues
 import pl.lambada.songsync.util.Providers
-import pl.lambada.songsync.util.get
 import pl.lambada.songsync.util.set
 
+/**
+ * Parses the comma-joined blacklist string back into folder paths. Crucially filters blank entries: a stored
+ * empty string would otherwise become `[""]` (size 1), making `blacklistedFolders.isNotEmpty()` spuriously true
+ * even when nothing is blacklisted. Pure + internal so it's unit-testable without a DataStore.
+ */
+internal fun parseBlacklistedFolders(raw: String): List<String> =
+    raw.split(",").filter { it.isNotBlank() }
+
 class UserSettingsController(private val dataStore: DataStore<Preferences>) {
-    var embedLyricsIntoFiles by mutableStateOf(dataStore.get(embedKey, false))
+    // Read the ENTIRE preferences snapshot once at construction (a single blocking read) instead of one
+    // runBlocking { data.first() } per field. UserSettingsController is built on the main thread in
+    // MainActivity.onCreate, so the old ~17 separate blocking reads stacked up into a noticeable startup stall.
+    // This isolates the startup blocking to this single point. (A fully async settings load would ripple through
+    // every screen that reads these as plain state, so it's intentionally out of scope for this change.)
+    private val prefs: Preferences = runBlocking(Dispatchers.IO) { dataStore.data.first() }
+
+    var embedLyricsIntoFiles by mutableStateOf(prefs[embedKey] ?: false)
         private set
 
-    var passedInit by mutableStateOf(dataStore.get(passedInitKey, false))
+    var passedInit by mutableStateOf(prefs[passedInitKey] ?: false)
         private set
 
     var selectedProvider by mutableStateOf(
         // Default to LRCLib (no keys, reliable, returns synced+plain+duration). Null-safe: a value
         // stored for a since-removed provider (e.g. Musixmatch) falls back to LRCLib instead of crashing.
         Providers.entries
-            .find { it.displayName == dataStore.get(selectedProviderKey, Providers.LRCLIB.displayName) }
+            .find { it.displayName == (prefs[selectedProviderKey] ?: Providers.LRCLIB.displayName) }
             ?: Providers.LRCLIB
     )
         private set
 
     var blacklistedFolders by mutableStateOf(
-        dataStore.get(blacklistedFoldersKey, "").split(",")
+        parseBlacklistedFolders(prefs[blacklistedFoldersKey] ?: "")
     )
         private set
 
-    var hideLyrics by mutableStateOf(dataStore.get(hideLyricsKey, false))
+    var hideLyrics by mutableStateOf(prefs[hideLyricsKey] ?: false)
         private set
 
-    var includeTranslation by mutableStateOf(dataStore.get(includeTranslationKey, false))
+    var includeTranslation by mutableStateOf(prefs[includeTranslationKey] ?: false)
         private set
 
-    var includeRomanization by mutableStateOf(dataStore.get(includeRomanizationKey, false))
+    var includeRomanization by mutableStateOf(prefs[includeRomanizationKey] ?: false)
         private set
 
-    var multiPersonWordByWord by mutableStateOf(dataStore.get(multiPersonWordByWordKey, true))
+    var multiPersonWordByWord by mutableStateOf(prefs[multiPersonWordByWordKey] ?: true)
         private set
 
-    var pureBlack by mutableStateOf(dataStore.get(pureBlackKey, true))
+    var pureBlack by mutableStateOf(prefs[pureBlackKey] ?: true)
         private set
 
-    var disableMarquee by mutableStateOf(dataStore.get(disableMarqueeKey, false))
+    var disableMarquee by mutableStateOf(prefs[disableMarqueeKey] ?: false)
         private set
 
-    var sdCardPath by mutableStateOf(dataStore.get(sdCardPathKey, null))
+    var sdCardPath by mutableStateOf(prefs[sdCardPathKey])
         private set
 
-    var showPath by mutableStateOf(dataStore.get(showPathKey, false))
+    var showPath by mutableStateOf(prefs[showPathKey] ?: false)
         private set
 
-    var directlyModifyTimestamps by mutableStateOf(dataStore.get(directlyModifyTimestampsKey, false))
+    var directlyModifyTimestamps by mutableStateOf(prefs[directlyModifyTimestampsKey] ?: false)
         private set
 
     var sortOrder by mutableStateOf(
         SortOrders.entries
-            .find { it.queryName == dataStore.get(sortOrderKey, SortOrders.ASCENDING.queryName) }!!
+            .find { it.queryName == (prefs[sortOrderKey] ?: SortOrders.ASCENDING.queryName) }!!
     )
         private set
 
     var sortBy by mutableStateOf(
         SortValues.entries
-            .find { it.name == dataStore.get(sortByKey, SortValues.TITLE.name) }!!
+            .find { it.name == (prefs[sortByKey] ?: SortValues.TITLE.name) }!!
     )
         private set
 

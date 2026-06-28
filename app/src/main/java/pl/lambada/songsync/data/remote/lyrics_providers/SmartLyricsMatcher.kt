@@ -6,8 +6,6 @@ import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LastResortAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.NeteaseAPI
 import pl.lambada.songsync.domain.model.SongInfo
-import pl.lambada.songsync.domain.model.lyrics_providers.others.LRCLibResponse
-import kotlin.math.abs
 import pl.lambada.songsync.util.Providers
 import pl.lambada.songsync.util.matching.ConfidenceBreakdown
 import pl.lambada.songsync.util.matching.ConfidenceScorer
@@ -174,35 +172,47 @@ class SmartLyricsMatcher(
         config: MatchConfig = MatchConfig(),
         log: (String) -> Unit = { Log.i(TAG, it) },
     ): LastResortHit? {
-        val query = candidates.map { it.asSearchString() }.firstOrNull { it.isNotBlank() } ?: return null
-        val metas = runCatching { lastResortApi.canonicalize(query) }
-            .onFailure { log("  [last-resort] canonicalize failed: ${it.message}") }
-            .getOrDefault(emptyList())
-        if (metas.isEmpty()) return null
+        // Try several reasonable candidate queries, not just the first — a single garbled query often
+        // canonicalizes badly, while the loosened/filename variants land the right canonical name.
+        val queries = candidates.map { it.asSearchString() }.filter { it.isNotBlank() }.distinct().take(3)
+        if (queries.isEmpty()) return null
 
-        for (meta in metas) {
-            val results = runCatching { lrcLib.searchCandidates("${meta.artist} ${meta.title}") }
+        // Collect every rescued LRCLib hit (across all queries/canonical names) WITHOUT accepting any yet, then
+        // hand them to the scorer-based validator. The old code accepted the closest-duration hit (or just the
+        // first when duration was unknown) with no similarity check, so a wrong song by the same artist could be
+        // rescued. selectBestRescue rescps each hit against the original local track via ConfidenceScorer.
+        val rescue = ArrayList<RescueCandidate>()
+        for (query in queries) {
+            val metas = runCatching { lastResortApi.canonicalize(query) }
+                .onFailure { log("  [last-resort] canonicalize failed: ${it.message}") }
                 .getOrDefault(emptyList())
-
-            // When we know the local duration, prefer the closest-length hit; otherwise the canonical top result.
-            fun pick(predicate: (LRCLibResponse) -> Boolean): LRCLibResponse? {
-                val cands = results.filter(predicate)
-                if (cands.isEmpty()) return null
-                val dur = local.durationSec
-                return if (dur != null) cands.minByOrNull { abs(it.duration - dur) } else cands.first()
+            for (meta in metas) {
+                val results = runCatching { lrcLib.searchCandidates("${meta.artist} ${meta.title}") }
+                    .getOrDefault(emptyList())
+                results.forEach { r ->
+                    rescue.add(
+                        RescueCandidate(
+                            result = ProviderResult(
+                                title = r.trackName,
+                                artist = r.artistName,
+                                durationSec = r.duration,
+                                album = r.albumName,
+                                hasSyncedLyrics = !r.syncedLyrics.isNullOrBlank(),
+                            ),
+                            syncedLyrics = r.syncedLyrics,
+                            plainLyrics = r.plainLyrics,
+                            coverUrl = meta.coverUrl,
+                        )
+                    )
+                }
+                delay(config.requestDelayMs)
             }
-
-            pick { !it.syncedLyrics.isNullOrBlank() }?.let {
-                log("  [last-resort] synced via ${meta.artist} - ${meta.title}")
-                return LastResortHit(it.trackName, it.artistName, it.syncedLyrics!!, true, meta.coverUrl)
-            }
-            pick { !it.plainLyrics.isNullOrBlank() }?.let {
-                log("  [last-resort] plain via ${meta.artist} - ${meta.title}")
-                return LastResortHit(it.trackName, it.artistName, it.plainLyrics!!, false, meta.coverUrl)
-            }
-            delay(config.requestDelayMs)
         }
-        return null
+
+        val hit = selectBestRescue(local, rescue)
+        if (hit == null) log("  [last-resort] no believable rescue cleared the confidence bar (${rescue.size} candidates)")
+        else log("  [last-resort] ${if (hit.synced) "synced" else "plain"} rescue -> ${hit.artist} - ${hit.title}")
+        return hit
     }
 
     /** Resolves the synced LRC body for a chosen hit (inline for LRCLib/generic, second fetch for Netease). */
@@ -236,14 +246,10 @@ class SmartLyricsMatcher(
             val conf = scoreFor(local, pr, cand.strategy)
             // Only spend a lyrics request if the metadata match is at least review-grade.
             val lyrics = if (conf.score >= ConfidenceScorer.REVIEW_THRESHOLD) {
+                // Pass the resolved SongInfo straight through — its provider token drives the lyrics fetch, so no
+                // shared state is read between these two calls.
                 runCatching {
-                    withRetry(config.maxRetries) {
-                        service.getSyncedLyrics(
-                            info.songName ?: return@withRetry null,
-                            info.artistName ?: return@withRetry null,
-                            provider,
-                        )
-                    }
+                    withRetry(config.maxRetries) { service.getSyncedLyrics(info, provider) }
                 }.getOrNull()
             } else null
 
@@ -306,4 +312,60 @@ class SmartLyricsMatcher(
             ScoredHit(Providers.NETEASE, cand.strategy, pr, scoreFor(local, pr, cand.strategy), null, s.id)
         }
     }
+}
+
+/** A raw rescued lyrics candidate (a canonicalized provider result + its lyrics) awaiting confidence validation. */
+data class RescueCandidate(
+    val result: ProviderResult,
+    val syncedLyrics: String?,
+    val plainLyrics: String?,
+    val coverUrl: String?,
+)
+
+/**
+ * Validates and ranks last-resort [candidates] against the original [local] track using the project's
+ * [ConfidenceScorer], so a canonicalization that guessed a *different* song (classically: same artist, wrong
+ * track) is rejected instead of blindly accepted (the previous behaviour, which took the closest-duration hit —
+ * or simply the first when duration was unknown — with no similarity check at all).
+ *
+ * Acceptance bar:
+ *  - confidence tier must be at least REVIEW (>= [ConfidenceScorer.REVIEW_THRESHOLD]); and
+ *  - when the local file's duration is known, the candidate must earn some duration credit (i.e. lengths are
+ *    within the scorer's window) — this is the "duration sanity" guard that rejects a same-title wrong-length
+ *    track that would otherwise squeak through on title/artist alone.
+ *
+ * Synced hits are preferred over plain, then higher confidence wins. Rescued hits remain REVIEW-grade for the
+ * caller (we never auto-accept a last-resort guess). Pure and Android-free so it is unit-testable on the JVM.
+ */
+fun selectBestRescue(local: LocalTrack, candidates: List<RescueCandidate>): SmartLyricsMatcher.LastResortHit? {
+    val localHasDuration = local.durationSec != null && local.durationSec > 0
+
+    data class Scored(val c: RescueCandidate, val synced: Boolean, val conf: ConfidenceBreakdown)
+
+    val scored = candidates.mapNotNull { c ->
+        val synced = !c.syncedLyrics.isNullOrBlank()
+        val body = if (synced) c.syncedLyrics else c.plainLyrics
+        if (body.isNullOrBlank()) return@mapNotNull null
+
+        val conf = ConfidenceScorer.score(local, c.result)
+        if (conf.tier == MatchTier.REJECT) return@mapNotNull null
+        // Duration sanity: if we know the local length, a candidate that earns zero duration credit is a
+        // different song — don't let it ride in on a similar title.
+        if (localHasDuration && conf.duration <= 0.0) return@mapNotNull null
+
+        Scored(c, synced, conf)
+    }
+
+    val best = scored.sortedWith(
+        compareByDescending<Scored> { it.synced }.thenByDescending { it.conf.score }
+    ).firstOrNull() ?: return null
+
+    val body = if (best.synced) best.c.syncedLyrics!! else best.c.plainLyrics!!
+    return SmartLyricsMatcher.LastResortHit(
+        title = best.c.result.title.orEmpty(),
+        artist = best.c.result.artist.orEmpty(),
+        lyrics = body,
+        synced = best.synced,
+        coverUrl = best.c.coverUrl,
+    )
 }

@@ -84,6 +84,34 @@ fun writeLyricsToFile(
     }
 }
 
+/**
+ * Persists [lrcContent] for [song] per the user's choices and returns whether at least one target actually
+ * succeeded. [writeLyricsToFile] throws on a hard write failure (caught by the caller), while [embedLyricsInFile]
+ * returns false WITHOUT throwing when the tag write fails or is denied — so "no exception" is not the same as
+ * "saved". Callers must use this boolean instead of runCatching{...}.isSuccess, which masked failed embeds as
+ * successes (showing a green/synced row for a song where nothing was written).
+ */
+fun persistLyrics(
+    context: Context,
+    song: Song,
+    lrcFile: File?,
+    lrcContent: String,
+    saveLrc: Boolean,
+    embedLyrics: Boolean,
+    sdCardPath: String?,
+): Boolean {
+    var wroteLrc = false
+    if (saveLrc || !embedLyrics) {
+        writeLyricsToFile(lrcFile, lrcContent, context, song, sdCardPath)
+        wroteLrc = true
+    }
+    var embedded = false
+    if (embedLyrics) {
+        embedded = embedLyricsInFile(context, song.filePath ?: error("File path is null"), lrcContent)
+    }
+    return wroteLrc || embedded
+}
+
 fun handleFileNotFoundException(
     context: Context,
     song: Song,
@@ -256,14 +284,15 @@ suspend fun downloadLyrics(
     saveLrc: Boolean = true,
     embedLyrics: Boolean = false,
     addUnsyncedFallback: Boolean = false,
-    onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int) -> Unit,
+    onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int, skippedCount: Int) -> Unit,
     onSongResult: (filePath: String, info: SongMatchInfo) -> Unit = { _, _ -> },
     onDownloadComplete: () -> Unit,
     onRateLimitReached: () -> Unit,
 ) {
-    var successCount = 0
+    var successCount = 0   // songs we actually fetched & saved lyrics for this run
     var noLyricsCount = 0
     var failedCount = 0
+    var skippedCount = 0   // already had synced lyrics and skipExisting was on — NOT a download
     var consecutiveFailures = 0
 
     // Auto-try ON: fall through every provider (same reach as the single-song search), so a song that only has
@@ -289,14 +318,17 @@ suspend fun downloadLyrics(
         val hasSynced = existingLrc?.exists() == true && LrcPrescan.isSyncedLrc(existingLrc)
         if (skipExisting && hasSynced) {
             if (path != null) onSongResult(path, SongMatchInfo(LyricState.HAS_LYRICS))
-            successCount++
-            onProgressUpdate(successCount, noLyricsCount, failedCount)
+            // Already-synced songs are skipped, not downloaded — count them separately so the summary doesn't
+            // inflate "Downloaded" with songs we never fetched.
+            skippedCount++
+            onProgressUpdate(successCount, noLyricsCount, failedCount, skippedCount)
             return@forEach
         }
 
         // Always overwrite once we've decided to process: replaces a stale/plain .lrc with the synced result.
         val info = matchAndSaveSong(song, viewModel, context, matcher, config, correctMetadata, overwriteExisting = true, saveLrc = saveLrc, embedLyrics = embedLyrics, addUnsyncedFallback = addUnsyncedFallback)
 
+        var rateLimited = false
         when (info.state) {
             LyricState.SYNCED, LyricState.REVIEW, LyricState.HAS_LYRICS, LyricState.UNSYNCED -> {
                 successCount++; consecutiveFailures = 0
@@ -304,13 +336,21 @@ suspend fun downloadLyrics(
             LyricState.NO_LYRICS -> { noLyricsCount++; consecutiveFailures = 0 }
             LyricState.FAILED -> {
                 failedCount++; consecutiveFailures++
-                if (consecutiveFailures >= 5) onRateLimitReached()
+                if (consecutiveFailures >= 5) rateLimited = true
             }
             LyricState.FETCHING -> { /* not a terminal state */ }
         }
 
         if (path != null) onSongResult(path, info)
-        onProgressUpdate(successCount, noLyricsCount, failedCount)
+        onProgressUpdate(successCount, noLyricsCount, failedCount, skippedCount)
+
+        // Too many consecutive failures => almost certainly rate-limited. Actually STOP the run (don't just flip a
+        // dialog while the loop keeps hammering providers in the background). The UI shows the rate-limit dialog;
+        // we return without calling onDownloadComplete since this isn't a normal completion.
+        if (rateLimited) {
+            onRateLimitReached()
+            return
+        }
     }
 
     onDownloadComplete()
@@ -379,9 +419,8 @@ suspend fun matchAndSaveSong(
             val songInfo = SongInfo(songName = lr.title, artistName = lr.artist)
             val lrcContent = formatLyrics(songInfo, lr.lyrics, context, viewModel.userSettingsController.directlyModifyTimestamps)
             val saved = runCatching {
-                if (saveLrc || !embedLyrics) writeLyricsToFile(lrcFile, lrcContent, context, song, viewModel.userSettingsController.sdCardPath)
-                if (embedLyrics) embedLyricsInFile(context, song.filePath ?: error("File path is null"), lrcContent)
-            }.isSuccess
+                persistLyrics(context, song, lrcFile, lrcContent, saveLrc, embedLyrics, viewModel.userSettingsController.sdCardPath)
+            }.getOrDefault(false)
             // Canonical match is fuzzy -> REVIEW (not auto-accept) so the user can verify timing.
             if (saved) return SongMatchInfo(LyricState.REVIEW, topForReport?.confidence?.percent(), Providers.LRCLIB, lr.title, lr.artist)
         }
@@ -396,9 +435,8 @@ suspend fun matchAndSaveSong(
                 val songInfo = SongInfo(songName = pTitle, artistName = pArtist)
                 val lrcContent = formatLyrics(songInfo, plainBody, context, viewModel.userSettingsController.directlyModifyTimestamps)
                 val saved = runCatching {
-                    if (saveLrc || !embedLyrics) writeLyricsToFile(lrcFile, lrcContent, context, song, viewModel.userSettingsController.sdCardPath)
-                    if (embedLyrics) embedLyricsInFile(context, song.filePath ?: error("File path is null"), lrcContent)
-                }.isSuccess
+                    persistLyrics(context, song, lrcFile, lrcContent, saveLrc, embedLyrics, viewModel.userSettingsController.sdCardPath)
+                }.getOrDefault(false)
                 if (saved) return SongMatchInfo(LyricState.UNSYNCED, topForReport?.confidence?.percent(), plain?.provider ?: Providers.LRCLIB, pTitle, pArtist)
             }
         }
@@ -416,16 +454,15 @@ suspend fun matchAndSaveSong(
     val songInfo = SongInfo(songName = best.result.title, artistName = best.result.artist)
     val lrcContent = formatLyrics(songInfo, lyrics, context, viewModel.userSettingsController.directlyModifyTimestamps)
 
-    runCatching {
-        // Independent choices: write a sidecar .lrc and/or embed into the file. Default saves the .lrc.
-        if (saveLrc || !embedLyrics) {
-            writeLyricsToFile(lrcFile, lrcContent, context, song, viewModel.userSettingsController.sdCardPath)
-        }
-        if (embedLyrics) {
-            embedLyricsInFile(context, song.filePath ?: error("File path is null"), lrcContent)
-        }
+    // Independent choices: write a sidecar .lrc and/or embed into the file. Default saves the .lrc. Honour the
+    // embed boolean: a failed embed (no exception) must still count as a failure when it was the only target.
+    val saved = runCatching {
+        persistLyrics(context, song, lrcFile, lrcContent, saveLrc, embedLyrics, viewModel.userSettingsController.sdCardPath)
     }.getOrElse {
         Log.e("MusicResync", "saving .lrc failed for ${song.filePath}: ${it.message}")
+        false
+    }
+    if (!saved) {
         return SongMatchInfo(LyricState.FAILED, best.confidence.percent(), best.provider, best.result.title, best.result.artist)
     }
 
@@ -502,7 +539,7 @@ fun applyOffsetToLyrics(lyrics: String, offset: Int): String {
     val timestampRegex = Regex("""[\[<](\d+):(\d+)\.(\d+)[]>]""")
 
     fun applyOffset(minute: Int, second: Int, millisecond: Int): String {
-        val totalMilliseconds = (minute * 60 * 1000) + (second * 1000) + (millisecond * 10) + offset
+        val totalMilliseconds = (minute * 60 * 1000) + (second * 1000) + millisecond + offset
         if (totalMilliseconds < 0) return "00:00.000" // Prevent negative times
 
         val newMinutes = (totalMilliseconds / 60000) % 60
@@ -518,7 +555,10 @@ fun applyOffsetToLyrics(lyrics: String, offset: Int): String {
         val (minuteStr, secondStr, millisecondStr) = matchResult.destructured
         val minute = minuteStr.toInt()
         val second = secondStr.toInt()
-        val millisecond = millisecondStr.toInt()
+        // Normalise the fractional part to milliseconds the same way the player's parser does (".50" -> 500,
+        // ".500" -> 500). This keeps a single application correct for standard centisecond LRC while making the
+        // function safe to re-apply to the 3-digit-millisecond output it emits (no more ×10 on the second pass).
+        val millisecond = millisecondStr.padEnd(3, '0').take(3).toInt()
 
         val startChar = matchResult.value[0]
         val endChar = if (startChar == '[') ']' else '>'
