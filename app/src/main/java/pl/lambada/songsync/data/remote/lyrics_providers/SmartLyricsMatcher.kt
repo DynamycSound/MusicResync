@@ -209,7 +209,11 @@ class SmartLyricsMatcher(
             }
         }
 
-        val hit = selectBestRescue(local, rescue)
+        val localViews = buildList {
+            add(local)
+            candidates.forEach { c -> add(LocalTrack(c.title, c.artist, local.durationSec, local.album)) }
+        }.distinct()
+        val hit = selectBestRescue(localViews, rescue)
         if (hit == null) log("  [last-resort] no believable rescue cleared the confidence bar (${rescue.size} candidates)")
         else log("  [last-resort] ${if (hit.synced) "synced" else "plain"} rescue -> ${hit.artist} - ${hit.title}")
         return hit
@@ -228,33 +232,42 @@ class SmartLyricsMatcher(
     }
 
     /**
-     * Scored single-result path for providers that aren't LRCLib/Netease (Apple, Musixmatch, Spotify, QQ).
-     * Each lookup is wrapped so a provider outage (timeout, JSON change) yields no hit instead of an error,
-     * and the result is run through the confidence scorer so a wrong "first result" (e.g. a remix) is rejected
-     * rather than blindly accepted. Lyrics are only fetched when the match already looks promising.
+     * Scored multi-result path for providers that don't expose a full search endpoint here (Apple, Spotify, QQ).
+     * We walk a few result offsets, score each candidate, and keep the believable ones. This fixes cases where a
+     * provider's *first* result is a different song (e.g. a short title like "Au" for "Audubon"): the bad top
+     * hit is rejected by the scorer and later offsets still get a chance to match. Lyrics are only fetched when
+     * the metadata score is already at least review-grade.
      */
     private suspend fun searchGeneric(
         provider: Providers, local: LocalTrack, cand: QueryCandidate, config: MatchConfig, log: (String) -> Unit
     ): List<ScoredHit> {
         val service = providerService ?: return emptyList()
-        return runCatching {
-            val info = withRetry(config.maxRetries, onRetry = { a, d, e -> log("  [${provider.displayName}] retry $a in ${d}ms (${e.message})") }) {
-                service.getSongInfo(SongInfo(cand.title, cand.artist), 0, provider)
-            } ?: return emptyList()
+        val hits = LinkedHashMap<String, ScoredHit>()
+
+        for (offset in 0 until config.maxCandidatesPerProvider) {
+            val info = runCatching {
+                withRetry(config.maxRetries, onRetry = { a, d, e ->
+                    log("  [${provider.displayName}] retry $a in ${d}ms (${e.message})")
+                }) {
+                    service.getSongInfo(SongInfo(cand.title, cand.artist), offset, provider)
+                }
+            }.onFailure {
+                log("  [${provider.displayName}] failed: ${it.message}")
+            }.getOrNull() ?: break
 
             val pr = ProviderResult(info.songName, info.artistName, null, null, true)
             val conf = scoreFor(local, pr, cand.strategy)
-            // Only spend a lyrics request if the metadata match is at least review-grade.
             val lyrics = if (conf.score >= ConfidenceScorer.REVIEW_THRESHOLD) {
-                // Pass the resolved SongInfo straight through — its provider token drives the lyrics fetch, so no
-                // shared state is read between these two calls.
-                runCatching {
-                    withRetry(config.maxRetries) { service.getSyncedLyrics(info, provider) }
-                }.getOrNull()
+                runCatching { withRetry(config.maxRetries) { service.getSyncedLyrics(info, provider) } }.getOrNull()
             } else null
 
-            listOf(ScoredHit(provider, cand.strategy, pr, conf, lyrics, null))
-        }.onFailure { log("  [${provider.displayName}] failed: ${it.message}") }.getOrDefault(emptyList())
+            val hit = ScoredHit(provider, cand.strategy, pr, conf, lyrics, null)
+            val key = "${hit.provider}|${hit.result.title}|${hit.result.artist}|${hit.result.durationSec}"
+            val existing = hits[key]
+            if (existing == null || hit.confidence.score > existing.confidence.score) hits[key] = hit
+            if (hit.confidence.score >= ConfidenceScorer.AUTO_ACCEPT_THRESHOLD) break
+        }
+        return hits.values.sortedByDescending { it.confidence.score }
     }
 
     /**
@@ -323,22 +336,24 @@ data class RescueCandidate(
 )
 
 /**
- * Validates and ranks last-resort [candidates] against the original [local] track using the project's
- * [ConfidenceScorer], so a canonicalization that guessed a *different* song (classically: same artist, wrong
- * track) is rejected instead of blindly accepted (the previous behaviour, which took the closest-duration hit —
- * or simply the first when duration was unknown — with no similarity check at all).
+ * Validates and ranks last-resort [candidates] against several views of the local track (the raw tags plus the
+ * cleaned filename-derived candidates projected into [LocalTrack]s). This lets a rescue be judged against the
+ * *best* available local title/artist guess instead of whichever raw tag happened to be on disk, while still
+ * rejecting a canonicalization that guessed a different song by the same artist.
  *
  * Acceptance bar:
- *  - confidence tier must be at least REVIEW (>= [ConfidenceScorer.REVIEW_THRESHOLD]); and
- *  - when the local file's duration is known, the candidate must earn some duration credit (i.e. lengths are
- *    within the scorer's window) — this is the "duration sanity" guard that rejects a same-title wrong-length
- *    track that would otherwise squeak through on title/artist alone.
+ *  - confidence tier must be at least REVIEW (>= [ConfidenceScorer.REVIEW_THRESHOLD]);
+ *  - when the local duration is known, the candidate must earn some duration credit (different-length tracks are
+ *    rejected even if the artist matches);
+ *  - and the best title similarity must clear a modest floor unless we have an exact duration match. This blocks
+ *    same-artist wrong-song rescues that used to sneak through on artist similarity alone.
  *
  * Synced hits are preferred over plain, then higher confidence wins. Rescued hits remain REVIEW-grade for the
  * caller (we never auto-accept a last-resort guess). Pure and Android-free so it is unit-testable on the JVM.
  */
-fun selectBestRescue(local: LocalTrack, candidates: List<RescueCandidate>): SmartLyricsMatcher.LastResortHit? {
-    val localHasDuration = local.durationSec != null && local.durationSec > 0
+fun selectBestRescue(localViews: List<LocalTrack>, candidates: List<RescueCandidate>): SmartLyricsMatcher.LastResortHit? {
+    val durationView = localViews.firstOrNull { it.durationSec != null && it.durationSec > 0 }
+    val localHasDuration = durationView?.durationSec != null
 
     data class Scored(val c: RescueCandidate, val synced: Boolean, val conf: ConfidenceBreakdown)
 
@@ -347,11 +362,18 @@ fun selectBestRescue(local: LocalTrack, candidates: List<RescueCandidate>): Smar
         val body = if (synced) c.syncedLyrics else c.plainLyrics
         if (body.isNullOrBlank()) return@mapNotNull null
 
-        val conf = ConfidenceScorer.score(local, c.result)
+        val conf = localViews
+            .map { ConfidenceScorer.score(it, c.result) }
+            .maxByOrNull { it.score } ?: return@mapNotNull null
+
         if (conf.tier == MatchTier.REJECT) return@mapNotNull null
         // Duration sanity: if we know the local length, a candidate that earns zero duration credit is a
-        // different song — don't let it ride in on a similar title.
+        // different song — don't let it ride in on a similar title/artist alone.
         if (localHasDuration && conf.duration <= 0.0) return@mapNotNull null
+        // Last-resort still needs some title evidence. This blocks same-artist false rescues like
+        // "$uicideboy$ - Every Day I Pimp" -> "All of My Problems Always Involve Me" while still allowing a
+        // rescue through when the best cleaned candidate title really matches or the duration is exact.
+        if (!conf.durationMatched && conf.title < 0.55) return@mapNotNull null
 
         Scored(c, synced, conf)
     }

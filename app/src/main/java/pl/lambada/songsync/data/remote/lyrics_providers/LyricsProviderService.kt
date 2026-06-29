@@ -13,6 +13,10 @@ import pl.lambada.songsync.util.EmptyQueryException
 import pl.lambada.songsync.util.InternalErrorException
 import pl.lambada.songsync.util.NoTrackFoundException
 import pl.lambada.songsync.util.Providers
+import pl.lambada.songsync.util.matching.ConfidenceScorer
+import pl.lambada.songsync.util.matching.LocalTrack
+import pl.lambada.songsync.util.matching.MatchTier
+import pl.lambada.songsync.util.matching.ProviderResult
 import java.io.FileNotFoundException
 import java.net.UnknownHostException
 
@@ -74,31 +78,42 @@ class LyricsProviderService {
     }
 
     /**
-     * Gathers album-cover URLs for a song from every provider that exposes artwork (Apple across a few search
-     * results, Spotify), so the user can pick one in the thumbnail picker. Best-effort and failure-tolerant:
-     * a provider that errors or has no art simply contributes nothing. Exact-duplicate URLs are removed.
+     * Gathers album-cover URLs for a song from every provider that exposes artwork. Candidates are lightly
+     * validated against the requested title/artist before being shown, so an unrelated top search result doesn't
+     * pollute the picker with random art. We also probe a few more result offsets (especially Spotify) so the
+     * picker has more than just one or two options when several editions of the same track exist.
      */
-    suspend fun getCoverCandidates(title: String, artist: String, max: Int = 9): List<String> {
+    suspend fun getCoverCandidates(title: String, artist: String, max: Int = 12): List<String> {
         val urls = LinkedHashSet<String>()
+        val local = LocalTrack(title = title, artist = artist)
+
+        fun looksRelevant(remoteTitle: String?, remoteArtist: String?): Boolean {
+            val conf = ConfidenceScorer.score(local, ProviderResult(remoteTitle, remoteArtist))
+            return conf.tier != MatchTier.REJECT && conf.title >= 0.55
+        }
 
         suspend fun collect(provider: Providers, offsets: IntRange) {
             for (offset in offsets) {
                 if (urls.size >= max) return
-                val cover = runCatching { getSongInfo(SongInfo(title, artist), offset, provider) }
-                    .getOrNull()?.albumCoverLink?.takeIf { it.isNotBlank() }
-                if (cover != null) urls.add(cover)
+                val info = runCatching { getSongInfo(SongInfo(title, artist), offset, provider) }.getOrNull() ?: break
+                val cover = info.albumCoverLink?.takeIf { it.isNotBlank() } ?: continue
+                if (looksRelevant(info.songName, info.artistName)) urls.add(cover)
             }
         }
 
         runCatching { refreshSpotifyToken() }
-        collect(Providers.APPLE, 0..3)
-        collect(Providers.SPOTIFY, 0..0)
+        collect(Providers.APPLE, 0..5)
+        collect(Providers.SPOTIFY, 0..3)
 
-        // Top up with iTunes/Deezer artwork so there are still options when Apple/Spotify came up short.
+        // Top up with iTunes/Deezer artwork only when their canonicalized title/artist still look relevant.
         if (urls.size < max) {
-            runCatching { lastResortAPI.covers(title, artist, max) }
+            val query = listOfNotNull(artist.takeIf { it.isNotBlank() }, title.takeIf { it.isNotBlank() }).joinToString(" ")
+            runCatching { lastResortAPI.canonicalize(query, max) }
                 .getOrDefault(emptyList())
-                .forEach { if (urls.size < max) urls.add(it) }
+                .forEach { meta ->
+                    val cover = meta.coverUrl?.takeIf { it.isNotBlank() } ?: return@forEach
+                    if (urls.size < max && looksRelevant(meta.title, meta.artist)) urls.add(cover)
+                }
         }
 
         return urls.toList()

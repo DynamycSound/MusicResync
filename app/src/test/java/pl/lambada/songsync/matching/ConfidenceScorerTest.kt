@@ -67,4 +67,14 @@ class ConfidenceScorerTest {
         )
         assertEquals(MatchTier.REJECT, b.tier)
     }
+
+    @Test
+    fun `short substring title does not get promoted as phrase containment`() {
+        val b = ConfidenceScorer.score(
+            LocalTrack("Audubon", "\$uicideboy\$", null),
+            ProviderResult("Au", "Biba", null)
+        )
+        assertEquals("'Au' must not be treated as a high-confidence match for 'Audubon'", MatchTier.REJECT, b.tier)
+        assertTrue("title similarity should stay well below review", b.title < 0.60)
+    }
 }

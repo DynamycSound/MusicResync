@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -48,6 +49,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,14 +65,22 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.kyant.taglib.TagLib
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import pl.lambada.songsync.R
+import pl.lambada.songsync.ui.screens.lyricsFetch.components.ThumbnailPickerDialog
 import pl.lambada.songsync.util.applyOffsetToLyrics
 import pl.lambada.songsync.util.buildNeutralLrc
+import pl.lambada.songsync.util.embedCoverInFile
+import pl.lambada.songsync.util.getFileDescriptorFromPath
 import pl.lambada.songsync.util.parseOffsetTagMs
 import pl.lambada.songsync.util.upsertOffsetTag
 import pl.lambada.songsync.util.cache.SongCache
 import pl.lambada.songsync.util.cache.SongCacheEntry
+import pl.lambada.songsync.util.ext.BackPressHandler
 import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.showToast
 import pl.lambada.songsync.util.toCrlf
@@ -120,13 +130,19 @@ fun SyncedLyricsPlayerScreen(
     onBack: () -> Unit,
     onFindOnline: () -> Unit = {},
     /** When arriving from "Adjust timing", the (not-yet-saved) lyrics are passed here so nothing is written
-     *  until the user presses the checkmark. Null when opening an already-saved song from Home. */
+     *  until the user presses Apply or leaves via Back. Null when opening an already-saved song from Home. */
     initialLyrics: String? = null,
     /** User setting: true bakes the offset into timestamps on save; false writes an `[offset:]` tag instead. */
     directlyModifyTimestamps: Boolean = false,
+    /** Optional cover fetcher used by the overflow-menu thumbnail action. */
+    onRequestCovers: (suspend () -> List<String>)? = null,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val autoSaveOnExit = initialLyrics != null
     var menuExpanded by remember { mutableStateOf(false) }
+    var showThumbnailPicker by remember { mutableStateOf(false) }
+    var hasCover by remember(filePath) { mutableStateOf<Boolean?>(null) }
     var lrcText by remember(filePath) {
         mutableStateOf(
             initialLyrics?.takeIf { it.isNotBlank() } ?: runCatching {
@@ -163,6 +179,15 @@ fun SyncedLyricsPlayerScreen(
 
     DisposableEffect(Unit) {
         onDispose { runCatching { player.release() } }
+    }
+
+    LaunchedEffect(filePath) {
+        hasCover = withContext(Dispatchers.IO) {
+            runCatching {
+                val fd = getFileDescriptorFromPath(context, filePath, "r") ?: return@runCatching false
+                TagLib.getFrontCover(fd.dup().detachFd()) != null
+            }.getOrDefault(false)
+        }
     }
 
     // Pause the music (and, by extension, the lyric auto-scroll, which only advances while isPlaying) as soon as
@@ -220,6 +245,13 @@ fun SyncedLyricsPlayerScreen(
         }
     }
 
+    fun exitPlayer() {
+        // When the player was opened from "Adjust timing & preview", the lyrics exist only in-memory until the
+        // user confirms them. Back should behave like Apply for this preview flow so returning to Search/Home
+        // doesn't discard the synced lyrics and reopen the song as "No synced lyrics found".
+        if (autoSaveOnExit) saveSync() else onBack()
+    }
+
     // Poll playback position while playing.
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
@@ -256,6 +288,8 @@ fun SyncedLyricsPlayerScreen(
         if (!player.isPlaying) { player.start(); isPlaying = true }
     }
 
+    BackPressHandler(enabled = autoSaveOnExit && !menuExpanded && !showThumbnailPicker) { exitPlayer() }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -267,7 +301,7 @@ fun SyncedLyricsPlayerScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { exitPlayer() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -300,6 +334,16 @@ fun SyncedLyricsPlayerScreen(
                                 onBack()
                             }
                         )
+                        if (onRequestCovers != null) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(if (hasCover == false) R.string.add_thumbnail else R.string.change_thumbnail)) },
+                                leadingIcon = { Icon(Icons.Filled.Image, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showThumbnailPicker = true
+                                }
+                            )
+                        }
                     }
                 }
             )
@@ -430,5 +474,21 @@ fun SyncedLyricsPlayerScreen(
                 }
             }
         }
+    }
+
+    if (showThumbnailPicker && onRequestCovers != null) {
+        ThumbnailPickerDialog(
+            onRequestCovers = onRequestCovers,
+            onPick = { url ->
+                scope.launch(Dispatchers.IO) {
+                    val ok = embedCoverInFile(context, filePath, url)
+                    withContext(Dispatchers.Main) {
+                        if (ok) hasCover = true
+                        showToast(context, context.getString(if (ok) R.string.thumbnail_saved else R.string.error))
+                    }
+                }
+            },
+            onDismiss = { showThumbnailPicker = false },
+        )
     }
 }

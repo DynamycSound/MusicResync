@@ -162,7 +162,11 @@ class LyricsFetchViewModel(
                 // name. Catches weird files the normal providers missed, and can even recover SYNCED lyrics.
                 val lr = runCatching { matcher.lastResort(local, candidates) }.getOrNull()
                 if (lr != null && lr.synced) {
-                    rememberProviders(null, order, LyricState.SYNCED)
+                    // The rescue path canonicalizes through iTunes/Deezer but the actual synced body comes from
+                    // LRCLib, so surface that honestly in the provider label instead of leaving the previously
+                    // selected provider (e.g. Netease/Spotify) visible above the rescued result.
+                    activeProvider = Providers.LRCLIB
+                    rememberProviders(Providers.LRCLIB, order.filter { it != Providers.LRCLIB }, LyricState.SYNCED)
                     queryState = QueryStatus.Success(SongInfo(songName = lr.title, artistName = lr.artist))
                     lyricsFetchState = LyricsFetchState.Success(lr.lyrics)
                     return@launch
@@ -201,19 +205,20 @@ class LyricsFetchViewModel(
 
                 val hits = matcher.search(local, candidates, MatchConfig(providerOrder = listOf(provider)))
                 val ranked = hits.filter { it.tier != MatchTier.REJECT }.ifEmpty { hits }
+                var chosen: ScoredHit? = null
                 var lyrics: String? = null
                 for (hit in ranked) {
                     val l = runCatching { matcher.fetchLyrics(hit) }.getOrNull()
-                    if (!l.isNullOrBlank()) { lyrics = l; break }
+                    if (!l.isNullOrBlank()) { chosen = hit; lyrics = l; break }
                 }
 
-                if (lyrics != null) {
+                if (lyrics != null && chosen != null) {
                     providerProbes[provider] = ProviderProbe.HAS_SYNCED
                     activeProvider = provider
                     userSettingsController.updateSelectedProviders(provider)
                     rememberProviders(provider, providerProbes.filterValues { it == ProviderProbe.NONE }.keys.toList(), LyricState.SYNCED)
                     queryState = QueryStatus.Success(
-                        SongInfo(songName = ranked.first().result.title, artistName = ranked.first().result.artist)
+                        SongInfo(songName = chosen.result.title, artistName = chosen.result.artist)
                     )
                     lyricsFetchState = LyricsFetchState.Success(lyrics)
                 } else {

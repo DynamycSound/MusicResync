@@ -233,9 +233,10 @@ fun SharedTransitionScope.LyricsFetchScreen(
                                 context.getString(R.string.lyrics_copied_to_clipboard),
                             )
                         },
-                        // Only local songs can be played back, so "Adjust timing" is offered for those. We do NOT
-                        // save here — the lyrics are passed to the player and written only when the user presses
-                        // the checkmark there.
+                        // Only local songs can be played back, so "Adjust timing" is offered for those. We do
+                        // not save here — the lyrics are passed to the player and written when the user presses
+                        // Apply (or simply backs out of the preview, which now behaves like Apply for unsaved
+                        // preview lyrics so they are not discarded).
                         onAdjustTiming = viewModel.source?.let { src ->
                             { lyrics: String ->
                                 val path = src.filePath.replace(".nowplaying", "")

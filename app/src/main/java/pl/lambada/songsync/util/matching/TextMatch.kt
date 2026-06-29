@@ -96,17 +96,24 @@ object TextMatch {
         return inter / ta.union(tb).size.toDouble()
     }
 
+    /** Whole-phrase containment on token boundaries, not arbitrary substrings inside a word. */
+    private fun containsPhrase(longer: String, shorter: String): Boolean {
+        if (longer.isEmpty() || shorter.isEmpty()) return false
+        return (" $longer ").contains(" $shorter ")
+    }
+
     /**
      * Combined similarity in [0,1] between two free-text fields (titles or artists). Normalizes both, then
-     * blends edit-distance ratio with token overlap and rewards full containment (e.g. "blinding lights"
-     * inside "blinding lights (remix)").
+     * blends edit-distance ratio with token overlap and rewards full phrase containment (e.g. "blinding lights"
+     * inside "blinding lights remix"). The containment bonus is intentionally word-boundary based, so a very
+     * short unrelated title like "Au" does NOT get promoted just because it is a substring of "Audubon".
      */
     fun similarity(a: String?, b: String?): Double {
         val na = normalizeForCompare(a)
         val nb = normalizeForCompare(b)
         if (na.isEmpty() || nb.isEmpty()) return 0.0
         if (na == nb) return 1.0
-        val containment = if (na.contains(nb) || nb.contains(na)) 0.92 else 0.0
+        val containment = if (containsPhrase(na, nb) || containsPhrase(nb, na)) 0.92 else 0.0
         val blended = 0.6 * levRatio(na, nb) + 0.4 * tokenOverlap(na, nb)
         return maxOf(blended, containment)
     }

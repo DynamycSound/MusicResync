@@ -25,7 +25,7 @@ class LastResortRescueTest {
             result = ProviderResult("Carrollton", "\$uicideboy\$", durationSec = 240.0, hasSyncedLyrics = true),
             syncedLyrics = synced, plainLyrics = null, coverUrl = null,
         )
-        assertNull("wrong-length same-artist guess must not be rescued", selectBestRescue(local, listOf(wrong)))
+        assertNull("wrong-length same-artist guess must not be rescued", selectBestRescue(listOf(local), listOf(wrong)))
     }
 
     @Test
@@ -39,7 +39,7 @@ class LastResortRescueTest {
             result = ProviderResult("Shape of You", "Ed Sheeran", durationSec = 234.0, hasSyncedLyrics = true),
             syncedLyrics = synced, plainLyrics = null, coverUrl = "http://cover",
         )
-        val hit = selectBestRescue(local, listOf(right))
+        val hit = selectBestRescue(listOf(local), listOf(right))
         assertTrue("legitimate rescue should be accepted", hit != null)
         assertEquals("Shape of You", hit!!.title)
         assertTrue(hit.synced)
@@ -56,14 +56,14 @@ class LastResortRescueTest {
             result = ProviderResult("Blinding Lights", "The Weeknd", durationSec = 201.0, hasSyncedLyrics = true),
             syncedLyrics = synced, plainLyrics = null, coverUrl = null,
         )
-        val hit = selectBestRescue(local, listOf(plain, syncedHit))
+        val hit = selectBestRescue(listOf(local), listOf(plain, syncedHit))
         assertTrue(hit!!.synced)
     }
 
     @Test
     fun `no candidates returns null`() {
         val local = LocalTrack(title = "x", artist = "y", durationSec = 100.0)
-        assertNull(selectBestRescue(local, emptyList()))
+        assertNull(selectBestRescue(listOf(local), emptyList()))
     }
 
     @Test
@@ -73,6 +73,18 @@ class LastResortRescueTest {
             result = ProviderResult("Completely Different Song", "Artist B", durationSec = 200.0, hasSyncedLyrics = true),
             syncedLyrics = synced, plainLyrics = null, coverUrl = null,
         )
-        assertNull(selectBestRescue(local, listOf(unrelated)))
+        assertNull(selectBestRescue(listOf(local), listOf(unrelated)))
+    }
+
+    @Test
+    fun `candidate-derived cleaned title can rescue even when raw local tag is garbage`() {
+        val raw = LocalTrack(title = "download 07 track", artist = "Unknown", durationSec = 142.0)
+        val cleanedView = LocalTrack(title = "Audubon", artist = "\$uicideboy\$", durationSec = 142.0)
+        val right = RescueCandidate(
+            result = ProviderResult("Audubon", "\$uicideboy\$", durationSec = 142.0, hasSyncedLyrics = true),
+            syncedLyrics = synced, plainLyrics = null, coverUrl = null,
+        )
+        val hit = selectBestRescue(listOf(raw, cleanedView), listOf(right))
+        assertEquals("Audubon", hit?.title)
     }
 }
