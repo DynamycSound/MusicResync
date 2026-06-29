@@ -298,11 +298,9 @@ suspend fun downloadLyrics(
     // Auto-try ON: fall through every provider (same reach as the single-song search), so a song that only has
     // synced lyrics on, say, Apple or Netease is still found in batch. OFF: LRCLib only (fastest).
     val matcher = SmartLyricsMatcher(providerService = LyricsProviderService())
-    val config = MatchConfig(
-        providerOrder = if (autoTryProviders)
-            listOf(Providers.LRCLIB, Providers.NETEASE, Providers.APPLE, Providers.SPOTIFY, Providers.QQMUSIC)
-        else listOf(Providers.LRCLIB)
-    )
+    val defaultProviders = listOf(Providers.LRCLIB, Providers.NETEASE, Providers.APPLE, Providers.SPOTIFY, Providers.QQMUSIC)
+    var lastSuccessfulProvider: Providers? = null
+    val providerSuccessCount = linkedMapOf<Providers, Int>().apply { defaultProviders.forEach { put(it, 0) } }
 
     songs.forEach { song ->
         // Stop promptly when the user presses Stop: the batch coroutine is cancelled and this throws
@@ -325,8 +323,24 @@ suspend fun downloadLyrics(
             return@forEach
         }
 
+        // Provider order adapts during the batch: try the last successful provider first, then the providers that
+        // have found the most songs so far, then the remaining defaults. This keeps the batch on the currently
+        // "hot" provider instead of restarting from LRCLib/Netease every single time.
+        val providerOrder = if (!autoTryProviders) {
+            listOf(Providers.LRCLIB)
+        } else {
+            buildList {
+                lastSuccessfulProvider?.let { add(it) }
+                defaultProviders
+                    .sortedWith(compareByDescending<Providers> { providerSuccessCount[it] ?: 0 }
+                        .thenBy { defaultProviders.indexOf(it) })
+                    .forEach { if (it !in this) add(it) }
+            }
+        }
+        val songConfig = MatchConfig(providerOrder = providerOrder)
+
         // Always overwrite once we've decided to process: replaces a stale/plain .lrc with the synced result.
-        val info = matchAndSaveSong(song, viewModel, context, matcher, config, correctMetadata, overwriteExisting = true, saveLrc = saveLrc, embedLyrics = embedLyrics, addUnsyncedFallback = addUnsyncedFallback)
+        val info = matchAndSaveSong(song, viewModel, context, matcher, songConfig, correctMetadata, overwriteExisting = true, saveLrc = saveLrc, embedLyrics = embedLyrics, addUnsyncedFallback = addUnsyncedFallback)
 
         var rateLimited = false
         when (info.state) {
@@ -339,6 +353,11 @@ suspend fun downloadLyrics(
                 if (consecutiveFailures >= 5) rateLimited = true
             }
             LyricState.FETCHING -> { /* not a terminal state */ }
+        }
+
+        if (info.provider != null && info.state in listOf(LyricState.SYNCED, LyricState.REVIEW, LyricState.UNSYNCED, LyricState.HAS_LYRICS)) {
+            lastSuccessfulProvider = info.provider
+            providerSuccessCount[info.provider] = (providerSuccessCount[info.provider] ?: 0) + 1
         }
 
         if (path != null) onSongResult(path, info)

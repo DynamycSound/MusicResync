@@ -135,7 +135,7 @@ class LyricsFetchViewModel(
 
                 // Fall through every acceptable hit until one actually returns synced lyrics (a provider can
                 // match the metadata yet have no synced body -- the old code gave up at the first such hit).
-                val ranked = hits.filter { it.tier != MatchTier.REJECT }.ifEmpty { hits }
+                val ranked = hits.filter { it.tier != MatchTier.REJECT }
                 var chosen: ScoredHit? = null
                 var lyrics: String? = null
                 for (hit in ranked) {
@@ -164,18 +164,27 @@ class LyricsFetchViewModel(
                     return@launch
                 }
 
-                // Last-resort lyrics rescue is intentionally DISABLED. In practice it still produced wrong songs
-                // for some messy local files (same artist, different title), and for lyrics it's better to fail
-                // honestly than silently save a different track's words. Keep the normal providers only.
+                // Last resort: canonicalize a messy filename via iTunes/Deezer and retry LRCLib under the clean
+                // name. This path is only allowed to succeed when the rescue still clears the scorer-based gates;
+                // otherwise we fail honestly instead of silently substituting a different song.
+                val lr = runCatching { matcher.lastResort(local, candidates) }.getOrNull()
+                if (lr != null && lr.synced) {
+                    activeProvider = Providers.LRCLIB
+                    providerProbes[Providers.LRCLIB] = ProviderProbe.HAS_SYNCED
+                    rememberProviders(Providers.LRCLIB, order.filter { it != Providers.LRCLIB })
+                    queryState = QueryStatus.Success(SongInfo(songName = lr.title, artistName = lr.artist, albumCoverLink = lr.coverUrl))
+                    lyricsFetchState = LyricsFetchState.Success(lr.lyrics)
+                    return@launch
+                }
 
-                // No synced lyrics anywhere -> offer plain (from LRCLib only) instead of erroring.
+                // No synced lyrics anywhere -> offer plain (LRCLib first, then the last-resort's plain body) instead of erroring.
                 rememberProviders(null, order)
                 val plain = runCatching { matcher.fetchPlainLyrics(local, candidates) }.getOrNull()
-                val plainLyrics = plain?.plainLyrics
+                val plainLyrics = plain?.plainLyrics ?: lr?.takeUnless { it.synced }?.lyrics
                 queryState = QueryStatus.SyncedNotFound(
                     song = SongInfo(
-                        songName = plain?.result?.title ?: ranked.firstOrNull()?.result?.title ?: querySongName,
-                        artistName = plain?.result?.artist ?: ranked.firstOrNull()?.result?.artist ?: queryArtistName,
+                        songName = plain?.result?.title ?: lr?.title ?: ranked.firstOrNull()?.result?.title ?: querySongName,
+                        artistName = plain?.result?.artist ?: lr?.artist ?: ranked.firstOrNull()?.result?.artist ?: queryArtistName,
                     ),
                     plainLyrics = plainLyrics,
                 )
@@ -200,7 +209,7 @@ class LyricsFetchViewModel(
                     .ifEmpty { listOf(QueryCandidate(querySongName, queryArtistName ?: "", MatchStrategy.TAGS)) }
 
                 val hits = matcher.search(local, candidates, MatchConfig(providerOrder = listOf(provider)))
-                val ranked = hits.filter { it.tier != MatchTier.REJECT }.ifEmpty { hits }
+                val ranked = hits.filter { it.tier != MatchTier.REJECT }
                 var chosen: ScoredHit? = null
                 var lyrics: String? = null
                 for (hit in ranked) {
