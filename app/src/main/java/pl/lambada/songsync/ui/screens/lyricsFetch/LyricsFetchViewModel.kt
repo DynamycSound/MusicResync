@@ -164,29 +164,18 @@ class LyricsFetchViewModel(
                     return@launch
                 }
 
-                // Last resort: canonicalize a messy filename via iTunes/Deezer and retry LRCLib under the clean
-                // name. Catches weird files the normal providers missed, and can even recover SYNCED lyrics.
-                val lr = runCatching { matcher.lastResort(local, candidates) }.getOrNull()
-                if (lr != null && lr.synced) {
-                    // The rescue path canonicalizes through iTunes/Deezer but the actual synced body comes from
-                    // LRCLib, so surface that honestly in the provider label instead of leaving the previously
-                    // selected provider (e.g. Netease/Spotify) visible above the rescued result.
-                    activeProvider = Providers.LRCLIB
-                    providerProbes[Providers.LRCLIB] = ProviderProbe.HAS_SYNCED
-                    rememberProviders(Providers.LRCLIB, order.filter { it != Providers.LRCLIB })
-                    queryState = QueryStatus.Success(SongInfo(songName = lr.title, artistName = lr.artist, albumCoverLink = lr.coverUrl))
-                    lyricsFetchState = LyricsFetchState.Success(lr.lyrics)
-                    return@launch
-                }
+                // Last-resort lyrics rescue is intentionally DISABLED. In practice it still produced wrong songs
+                // for some messy local files (same artist, different title), and for lyrics it's better to fail
+                // honestly than silently save a different track's words. Keep the normal providers only.
 
-                // No synced lyrics anywhere -> offer plain (from LRCLib or the last resort) instead of erroring.
+                // No synced lyrics anywhere -> offer plain (from LRCLib only) instead of erroring.
                 rememberProviders(null, order)
                 val plain = runCatching { matcher.fetchPlainLyrics(local, candidates) }.getOrNull()
-                val plainLyrics = plain?.plainLyrics ?: lr?.takeUnless { it.synced }?.lyrics
+                val plainLyrics = plain?.plainLyrics
                 queryState = QueryStatus.SyncedNotFound(
                     song = SongInfo(
-                        songName = plain?.result?.title ?: lr?.title ?: ranked.firstOrNull()?.result?.title ?: querySongName,
-                        artistName = plain?.result?.artist ?: lr?.artist ?: ranked.firstOrNull()?.result?.artist ?: queryArtistName,
+                        songName = plain?.result?.title ?: ranked.firstOrNull()?.result?.title ?: querySongName,
+                        artistName = plain?.result?.artist ?: ranked.firstOrNull()?.result?.artist ?: queryArtistName,
                     ),
                     plainLyrics = plainLyrics,
                 )

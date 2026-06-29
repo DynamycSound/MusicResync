@@ -85,6 +85,7 @@ import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.showToast
 import pl.lambada.songsync.util.toCrlf
 import java.io.File
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -271,8 +272,21 @@ fun SyncedLyricsPlayerScreen(
             else lines.indexOfLast { it.timeMs <= positionMs + offsetMs.roundToInt() }.coerceAtLeast(0)
         }
     }
+    // Word/line-dense lyrics were stuttering because we launched a new animateScrollToItem on *every* highlight
+    // change. Keep the current line within a comfortable window and only scroll when it leaves that window;
+    // small shifts jump immediately (no competing animations), while larger jumps still animate.
     LaunchedEffect(currentIndex) {
-        if (lines.isNotEmpty()) runCatching { listState.animateScrollToItem(currentIndex, scrollOffset = -300) }
+        if (lines.isEmpty()) return@LaunchedEffect
+        val visible = listState.layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
+        val first = listState.firstVisibleItemIndex
+        val lowerBound = first + 1
+        val upperBound = first + visible - 3
+        if (currentIndex in lowerBound..upperBound) return@LaunchedEffect
+        val target = (currentIndex - 3).coerceAtLeast(0)
+        runCatching {
+            if (abs(target - first) <= 2) listState.scrollToItem(target)
+            else listState.animateScrollToItem(target)
+        }
     }
 
     fun togglePlay() {

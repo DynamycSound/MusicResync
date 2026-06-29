@@ -88,7 +88,12 @@ fun Navigator(
                     initialLyrics = args.lyrics,
                     directlyModifyTimestamps = userSettingsController.directlyModifyTimestamps,
                     onRequestCovers = { lyricsProviderService.getCoverCandidates(args.songName, args.artists, args.filePath) },
-                    onBack = { navController.popBackStack() },
+                    // Preview mode (arrived from "Adjust timing & preview") should return to Home after Apply/Back,
+                    // not to the intermediate search result screen that launched it.
+                    onBack = {
+                        if (args.lyrics != null) navController.popBackStack(navController.graph.startDestinationId, false)
+                        else navController.popBackStack()
+                    },
                     onFindOnline = {
                         navController.navigate(
                             LyricsFetchScreen(

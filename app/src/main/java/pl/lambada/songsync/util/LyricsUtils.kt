@@ -410,34 +410,23 @@ suspend fun matchAndSaveSong(
         if (!l.isNullOrBlank()) { chosen = hit; lyrics = l; break }
     }
 
-    // No synced lyrics from the normal providers. Try the last resort, then optionally plain lyrics.
+    // No synced lyrics from the normal providers. The old last-resort lyrics rescue is intentionally disabled:
+    // for some messy files it still produced a different song by the same artist, and for lyrics it's better to
+    // fail honestly than silently save the wrong words. We only offer a plain LRCLib fallback when explicitly
+    // enabled by the user.
     if (chosen == null || lyrics == null) {
-        // Last resort: canonicalize the (likely garbled) metadata via iTunes/Deezer and retry LRCLib under the
-        // clean name. This rescues weird files the providers missed, and can even recover SYNCED lyrics.
-        val lr = runCatching { matcher.lastResort(local, candidates, config) }.getOrNull()
-        if (lr != null && lr.synced) {
-            val songInfo = SongInfo(songName = lr.title, artistName = lr.artist)
-            val lrcContent = formatLyrics(songInfo, lr.lyrics, context, viewModel.userSettingsController.directlyModifyTimestamps)
-            val saved = runCatching {
-                persistLyrics(context, song, lrcFile, lrcContent, saveLrc, embedLyrics, viewModel.userSettingsController.sdCardPath)
-            }.getOrDefault(false)
-            // Canonical match is fuzzy -> REVIEW (not auto-accept) so the user can verify timing.
-            if (saved) return SongMatchInfo(LyricState.REVIEW, topForReport?.confidence?.percent(), Providers.LRCLIB, lr.title, lr.artist)
-        }
-
         if (addUnsyncedFallback) {
             val plain = runCatching { matcher.fetchPlainLyrics(local, candidates, config) }.getOrNull()
-            // Use LRCLib's plain lyrics if any; otherwise the last resort's plain body.
-            val plainBody = plain?.plainLyrics ?: lr?.takeUnless { it.synced }?.lyrics
+            val plainBody = plain?.plainLyrics
             if (plainBody != null) {
-                val pTitle = plain?.result?.title ?: lr?.title
-                val pArtist = plain?.result?.artist ?: lr?.artist
+                val pTitle = plain.result.title
+                val pArtist = plain.result.artist
                 val songInfo = SongInfo(songName = pTitle, artistName = pArtist)
                 val lrcContent = formatLyrics(songInfo, plainBody, context, viewModel.userSettingsController.directlyModifyTimestamps)
                 val saved = runCatching {
                     persistLyrics(context, song, lrcFile, lrcContent, saveLrc, embedLyrics, viewModel.userSettingsController.sdCardPath)
                 }.getOrDefault(false)
-                if (saved) return SongMatchInfo(LyricState.UNSYNCED, topForReport?.confidence?.percent(), plain?.provider ?: Providers.LRCLIB, pTitle, pArtist)
+                if (saved) return SongMatchInfo(LyricState.UNSYNCED, topForReport?.confidence?.percent(), plain.provider, pTitle, pArtist)
             }
         }
         return SongMatchInfo(
