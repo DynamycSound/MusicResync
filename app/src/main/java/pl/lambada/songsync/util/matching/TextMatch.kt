@@ -96,9 +96,16 @@ object TextMatch {
         return inter / ta.union(tb).size.toDouble()
     }
 
-    /** Whole-phrase containment on token boundaries, not arbitrary substrings inside a word. */
+    /**
+     * Whole-phrase containment on token boundaries, not arbitrary substrings inside a word.
+     * Very short one-word titles (e.g. "Au", "Every") are deliberately NOT granted the big containment bonus,
+     * otherwise they falsely look almost exact inside a different longer title ("Audubon", "Every Dog Has His
+     * Day") and can beat the correct track. Exact equality is still handled earlier in [similarity].
+     */
     private fun containsPhrase(longer: String, shorter: String): Boolean {
         if (longer.isEmpty() || shorter.isEmpty()) return false
+        val shorterTokens = shorter.split(' ').filter { it.isNotBlank() }
+        if (shorterTokens.size < 2 && shorter.length < 7) return false
         return (" $longer ").contains(" $shorter ")
     }
 

@@ -109,6 +109,14 @@ object ConfidenceScorer {
             score = AUTO_ACCEPT_THRESHOLD
         }
 
+        // A same-artist but different-song result can still look deceptively decent on the weighted average when
+        // the artist matches exactly and the title shares a generic word (e.g. local="Every day i pimp" vs
+        // result="Every Dog Has His Day"). Unless the runtime matches exactly, require some minimum title
+        // evidence before a candidate is even review-grade.
+        if (!durationMatched && titleSim < 0.55 && score >= REVIEW_THRESHOLD) {
+            score = REVIEW_THRESHOLD - 0.01
+        }
+
         return ConfidenceBreakdown(
             score = score.coerceIn(0.0, 1.0),
             title = titleSim,

@@ -72,15 +72,20 @@ class LyricsFetchViewModel(
     /** Cleaned local path used both for saving the .lrc and as the persistent cache key. */
     private val cachePath: String? get() = source?.filePath?.replace(".nowplaying", "")
 
-    private fun rememberProviders(chosen: Providers?, failed: List<Providers>, state: LyricState) {
+    /** True once this screen has actually persisted lyrics/cover changes, so backing out should no longer warn. */
+    var hasPersistedLyricsChange by mutableStateOf(false)
+        private set
+
+    private fun rememberProviders(chosen: Providers?, failed: List<Providers>) {
         val path = cachePath ?: return
-        SongCache.update(path) { prev ->
-            (prev ?: SongCacheEntry(state)).copy(
-                state = state,
-                chosenProvider = chosen?.displayName ?: prev?.chosenProvider,
+        val prev = SongCache.get(path) ?: return
+        SongCache.put(
+            path,
+            prev.copy(
+                chosenProvider = chosen?.displayName ?: prev.chosenProvider,
                 failedProviders = failed.map { it.displayName },
             )
-        }
+        )
     }
 
     private suspend fun getSyncedLyrics(title: String, artist: String): String? {
@@ -102,6 +107,7 @@ class LyricsFetchViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             queryState = QueryStatus.Pending
             lyricsFetchState = LyricsFetchState.NotSubmitted
+            hasPersistedLyricsChange = false
             providerProbes.clear()
 
             try {
@@ -150,7 +156,7 @@ class LyricsFetchViewModel(
 
                 if (chosen != null && lyrics != null) {
                     activeProvider = chosen.provider
-                    rememberProviders(chosen.provider, order.filter { it != chosen.provider }, LyricState.SYNCED)
+                    rememberProviders(chosen.provider, order.filter { it != chosen.provider })
                     queryState = QueryStatus.Success(
                         SongInfo(songName = chosen.result.title, artistName = chosen.result.artist)
                     )
@@ -166,14 +172,15 @@ class LyricsFetchViewModel(
                     // LRCLib, so surface that honestly in the provider label instead of leaving the previously
                     // selected provider (e.g. Netease/Spotify) visible above the rescued result.
                     activeProvider = Providers.LRCLIB
-                    rememberProviders(Providers.LRCLIB, order.filter { it != Providers.LRCLIB }, LyricState.SYNCED)
-                    queryState = QueryStatus.Success(SongInfo(songName = lr.title, artistName = lr.artist))
+                    providerProbes[Providers.LRCLIB] = ProviderProbe.HAS_SYNCED
+                    rememberProviders(Providers.LRCLIB, order.filter { it != Providers.LRCLIB })
+                    queryState = QueryStatus.Success(SongInfo(songName = lr.title, artistName = lr.artist, albumCoverLink = lr.coverUrl))
                     lyricsFetchState = LyricsFetchState.Success(lr.lyrics)
                     return@launch
                 }
 
                 // No synced lyrics anywhere -> offer plain (from LRCLib or the last resort) instead of erroring.
-                rememberProviders(null, order, LyricState.NO_LYRICS)
+                rememberProviders(null, order)
                 val plain = runCatching { matcher.fetchPlainLyrics(local, candidates) }.getOrNull()
                 val plainLyrics = plain?.plainLyrics ?: lr?.takeUnless { it.synced }?.lyrics
                 queryState = QueryStatus.SyncedNotFound(
@@ -216,7 +223,7 @@ class LyricsFetchViewModel(
                     providerProbes[provider] = ProviderProbe.HAS_SYNCED
                     activeProvider = provider
                     userSettingsController.updateSelectedProviders(provider)
-                    rememberProviders(provider, providerProbes.filterValues { it == ProviderProbe.NONE }.keys.toList(), LyricState.SYNCED)
+                    rememberProviders(provider, providerProbes.filterValues { it == ProviderProbe.NONE }.keys.toList())
                     queryState = QueryStatus.Success(
                         SongInfo(songName = chosen.result.title, artistName = chosen.result.artist)
                     )
@@ -244,10 +251,11 @@ class LyricsFetchViewModel(
     fun checkLocalCover(context: Context) {
         val path = cachePath ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            localHasCover = runCatching {
+            val has = runCatching {
                 val fd = getFileDescriptorFromPath(context, path, "r") ?: return@runCatching false
                 TagLib.getFrontCover(fd.dup().detachFd()) != null
             }.getOrDefault(false)
+            withContext(Dispatchers.Main) { localHasCover = has }
         }
     }
 
@@ -256,7 +264,12 @@ class LyricsFetchViewModel(
         lyricsProviderService.getCoverCandidates(
             song.songName ?: querySongName,
             song.artistName ?: queryArtistName,
+            source?.filePath,
         )
+
+    fun markLyricsWillBeSavedByPlayer() {
+        hasPersistedLyricsChange = true
+    }
 
     /** Downloads and embeds the chosen cover into the local audio file (off the main thread). */
     fun embedCover(url: String, context: Context) {
@@ -287,6 +300,7 @@ class LyricsFetchViewModel(
         path?.let { p ->
             SongCache.update(p) { prev -> (prev ?: SongCacheEntry(LyricState.UNSYNCED)).copy(state = LyricState.UNSYNCED) }
         }
+        hasPersistedLyricsChange = true
     }
 
     fun saveLyricsToFile(
@@ -316,6 +330,7 @@ class LyricsFetchViewModel(
         cachePath?.let { p ->
             SongCache.update(p) { prev -> (prev ?: SongCacheEntry(LyricState.HAS_LYRICS)).copy(state = LyricState.HAS_LYRICS) }
         }
+        hasPersistedLyricsChange = true
 
         showToast(context, R.string.file_saved_to, file.absolutePath)
     }
@@ -356,8 +371,10 @@ class LyricsFetchViewModel(
         }.onSuccess { embedded ->
             // embedLyricsInFile returns false (without throwing) when the tag write fails or is denied — don't
             // claim success in that case.
-            if (embedded) showToast(context, R.string.embedded_lyrics_in_file)
-            else showToast(context, context.getString(R.string.error))
+            if (embedded) {
+                hasPersistedLyricsChange = true
+                showToast(context, R.string.embedded_lyrics_in_file)
+            } else showToast(context, context.getString(R.string.error))
         }
     }
 

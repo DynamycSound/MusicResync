@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +55,7 @@ import pl.lambada.songsync.ui.screens.lyricsFetch.components.NoConnectionDialogu
 import pl.lambada.songsync.ui.screens.lyricsFetch.components.NotSubmittedContent
 import pl.lambada.songsync.ui.screens.lyricsFetch.components.SuccessContent
 import pl.lambada.songsync.util.Providers
+import pl.lambada.songsync.util.ext.BackPressHandler
 import pl.lambada.songsync.util.showToast
 
 /**
@@ -75,6 +77,16 @@ fun SharedTransitionScope.LyricsFetchScreen(
     val clipboardManager = LocalClipboardManager.current
 
     var expandedProviders by remember { mutableStateOf(false) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
+    fun navigateBack() {
+        val hasUnsavedFetchedLyrics = viewModel.source != null && !viewModel.hasPersistedLyricsChange &&
+            (viewModel.queryState is QueryStatus.Success || viewModel.queryState is QueryStatus.SyncedNotFound)
+        if (hasUnsavedFetchedLyrics) showDiscardDialog = true
+        else navController.popBackStack(navController.graph.startDestinationId, false)
+    }
+
+    BackPressHandler(enabled = !showDiscardDialog) { navigateBack() }
 
     LaunchedEffect(Unit) {
         if (viewModel.source != null) {
@@ -95,14 +107,7 @@ fun SharedTransitionScope.LyricsFetchScreen(
         topBar = {
             MediumTopAppBar(
                 navigationIcon = {
-                    IconButton(
-                        onClick = {
-                            navController.popBackStack(
-                                navController.graph.startDestinationId,
-                                false
-                            )
-                        }
-                    ) {
+                    IconButton(onClick = { navigateBack() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.back),
@@ -240,6 +245,7 @@ fun SharedTransitionScope.LyricsFetchScreen(
                         onAdjustTiming = viewModel.source?.let { src ->
                             { lyrics: String ->
                                 val path = src.filePath.replace(".nowplaying", "")
+                                viewModel.markLyricsWillBeSavedByPlayer()
                                 navController.navigate(
                                     PlayerScreen(
                                         filePath = path,
@@ -307,5 +313,24 @@ fun SharedTransitionScope.LyricsFetchScreen(
                 }
             }
         }
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text(stringResource(R.string.discard_changes)) },
+            text = { Text(stringResource(R.string.discard_fetched_lyrics_prompt)) },
+            confirmButton = {
+                Button(onClick = {
+                    showDiscardDialog = false
+                    navController.popBackStack(navController.graph.startDestinationId, false)
+                }) { Text(stringResource(R.string.discard_changes)) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showDiscardDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
     }
 }

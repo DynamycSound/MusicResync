@@ -85,6 +85,14 @@ class HomeViewModel(
 
     var isRefreshing by mutableStateOf(false)
 
+    /**
+     * True only for the very first lyric-state population on a cacheless launch. Until the initial disk pre-scan
+     * finishes, the app would otherwise render every song as red/"No lyrics" because missing map entries fall
+     * back to NO_LYRICS. We keep showing the loading screen for that first cold-start scan instead of lying.
+     */
+    var waitingForInitialLyricScan by mutableStateOf(false)
+        private set
+
     /** True while a batch download is running — gates the disk refresh so it can't clobber in-flight states. */
     var batchRunning by mutableStateOf(false)
         private set
@@ -169,17 +177,21 @@ class HomeViewModel(
         if (batchRunning) return null // don't clobber in-flight FETCHING/SYNCED states while a batch is saving
         val songs = cachedSongs ?: return null
         return viewModelScope.launch(Dispatchers.IO) {
-            val results = LrcPrescan.scan(songs.mapNotNull { it.filePath })
-            val states = results.mapValues { (_, r) ->
-                when (r) {
-                    PrescanResult.ALREADY_SYNCED, PrescanResult.RENAMED_FROM_PRIVATE -> LyricState.HAS_LYRICS
-                    PrescanResult.ALREADY_PRESENT_UNSYNCED -> LyricState.UNSYNCED
-                    PrescanResult.NONE -> LyricState.NO_LYRICS
+            try {
+                val results = LrcPrescan.scan(songs.mapNotNull { it.filePath })
+                val states = results.mapValues { (_, r) ->
+                    when (r) {
+                        PrescanResult.ALREADY_SYNCED, PrescanResult.RENAMED_FROM_PRIVATE -> LyricState.HAS_LYRICS
+                        PrescanResult.ALREADY_PRESENT_UNSYNCED -> LyricState.UNSYNCED
+                        PrescanResult.NONE -> LyricState.NO_LYRICS
+                    }
                 }
+                states.forEach { (path, st) -> songMatchStatus[path] = SongMatchInfo(st) }
+                // Persist the fresh truth (keeping each song's remembered offset/provider) for an instant next launch.
+                SongCache.replaceStates(states)
+            } finally {
+                waitingForInitialLyricScan = false
             }
-            states.forEach { (path, st) -> songMatchStatus[path] = SongMatchInfo(st) }
-            // Persist the fresh truth (keeping each song's remembered offset/provider) for an instant next launch.
-            SongCache.replaceStates(states)
         }
     }
 
@@ -260,6 +272,9 @@ class HomeViewModel(
                     val path = s.filePath ?: return@forEach
                     SongCache.matchInfo(path)?.let { songMatchStatus[path] = it }
                 }
+                // Cacheless first launch: keep the loading screen up until the first disk pre-scan populates the
+                // map, otherwise every missing entry falls back to NO_LYRICS and the whole list flashes red.
+                waitingForInitialLyricScan = songs.isNotEmpty() && songMatchStatus.isEmpty()
             }
 
             cachedSongs = songs

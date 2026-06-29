@@ -29,6 +29,8 @@
     <string name="thumbnail_saved">Thumbnail saved</string>
     <string name="no_thumbnails_found">No thumbnails found for this song.</string>
     <string name="pick_thumbnail">Pick a thumbnail</string>
+    <string name="discard_changes">Discard changes</string>
+    <string name="discard_fetched_lyrics_prompt">You found lyrics for this song but haven’t saved them yet. Discard the fetched lyrics and go back?</string>
     <string name="trying_provider">Trying %1$s…</string>
     <string name="this_may_take_a_minute">This can take a minute or two — we\'re trying multiple providers to find the best synced match.</string>
     <string name="remove_current_lyrics">Remove current lyrics</string>

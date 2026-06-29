@@ -87,7 +87,7 @@ fun Navigator(
                     artists = args.artists,
                     initialLyrics = args.lyrics,
                     directlyModifyTimestamps = userSettingsController.directlyModifyTimestamps,
-                    onRequestCovers = { lyricsProviderService.getCoverCandidates(args.songName, args.artists) },
+                    onRequestCovers = { lyricsProviderService.getCoverCandidates(args.songName, args.artists, args.filePath) },
                     onBack = { navController.popBackStack() },
                     onFindOnline = {
                         navController.navigate(

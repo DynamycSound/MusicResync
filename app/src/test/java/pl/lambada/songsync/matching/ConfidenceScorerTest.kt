@@ -77,4 +77,14 @@ class ConfidenceScorerTest {
         assertEquals("'Au' must not be treated as a high-confidence match for 'Audubon'", MatchTier.REJECT, b.tier)
         assertTrue("title similarity should stay well below review", b.title < 0.60)
     }
+
+    @Test
+    fun `generic one-word containment does not turn a different same-artist song into a match`() {
+        val b = ConfidenceScorer.score(
+            LocalTrack("Every", "\$uicideboy\$", null),
+            ProviderResult("Every Dog Has His Day", "\$uicideboy\$", null)
+        )
+        assertTrue("same-artist generic one-word title should stay below review", b.score < ConfidenceScorer.REVIEW_THRESHOLD)
+        assertTrue("title similarity should not get the large containment bonus", b.title < 0.60)
+    }
 }

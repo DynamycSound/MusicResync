@@ -14,6 +14,7 @@ import pl.lambada.songsync.util.InternalErrorException
 import pl.lambada.songsync.util.NoTrackFoundException
 import pl.lambada.songsync.util.Providers
 import pl.lambada.songsync.util.matching.ConfidenceScorer
+import pl.lambada.songsync.util.matching.FilenameParser
 import pl.lambada.songsync.util.matching.LocalTrack
 import pl.lambada.songsync.util.matching.MatchTier
 import pl.lambada.songsync.util.matching.ProviderResult
@@ -83,37 +84,101 @@ class LyricsProviderService {
      * pollute the picker with random art. We also probe a few more result offsets (especially Spotify) so the
      * picker has more than just one or two options when several editions of the same track exist.
      */
-    suspend fun getCoverCandidates(title: String, artist: String, max: Int = 12): List<String> {
+    suspend fun getCoverCandidates(title: String, artist: String, filePath: String? = null, max: Int = 12): List<String> {
         val urls = LinkedHashSet<String>()
-        val local = LocalTrack(title = title, artist = artist)
+        val localViews = buildList {
+            add(LocalTrack(title = title, artist = artist))
+            FilenameParser.candidates(title, artist, filePath).forEach { c -> add(LocalTrack(c.title, c.artist)) }
+        }.distinct()
+        val coverQueries = FilenameParser.candidates(title, artist, filePath)
+            .map { SongInfo(it.title, it.artist) }
+            .distinctBy { "${it.songName}|${it.artistName}" }
+            .ifEmpty { listOf(SongInfo(title, artist)) }
+            .take(4)
+
+        fun bestScore(remoteTitle: String?, remoteArtist: String?) = localViews
+            .map { view -> ConfidenceScorer.score(view, ProviderResult(remoteTitle, remoteArtist)) }
+            .maxByOrNull { it.score }
 
         fun looksRelevant(remoteTitle: String?, remoteArtist: String?): Boolean {
-            val conf = ConfidenceScorer.score(local, ProviderResult(remoteTitle, remoteArtist))
-            return conf.tier != MatchTier.REJECT && conf.title >= 0.55
+            val best = bestScore(remoteTitle, remoteArtist) ?: return false
+            return best.score >= ConfidenceScorer.REVIEW_THRESHOLD && best.title >= 0.55
+        }
+
+        // Softer art-only relevance for the "I need more than one thumbnail" case: keep covers from obviously
+        // the same artist when the title still has *some* overlap, even if that hit wasn't strong enough to be a
+        // lyrics match. This broadens the picker with related/album-level art instead of showing zero options.
+        fun looksArtistRelated(remoteTitle: String?, remoteArtist: String?): Boolean {
+            val best = bestScore(remoteTitle, remoteArtist) ?: return false
+            return best.artist >= 0.85 && best.title >= 0.20
+        }
+
+        fun looksSameArtist(remoteArtist: String?): Boolean {
+            val artistView = localViews.map { it.artist }.firstOrNull { !it.isNullOrBlank() } ?: return false
+            val best = ConfidenceScorer.score(LocalTrack(title = null, artist = artistView), ProviderResult(null, remoteArtist))
+            return best.artist >= 0.85
         }
 
         suspend fun collect(provider: Providers, offsets: IntRange) {
-            for (offset in offsets) {
-                if (urls.size >= max) return
-                val info = runCatching { getSongInfo(SongInfo(title, artist), offset, provider) }.getOrNull() ?: break
-                val cover = info.albumCoverLink?.takeIf { it.isNotBlank() } ?: continue
-                if (looksRelevant(info.songName, info.artistName)) urls.add(cover)
+            for (query in coverQueries) {
+                for (offset in offsets) {
+                    if (urls.size >= max) return
+                    val info = runCatching { getSongInfo(query, offset, provider) }.getOrNull() ?: break
+                    val cover = info.albumCoverLink?.takeIf { it.isNotBlank() } ?: continue
+                    if (looksRelevant(info.songName, info.artistName)) urls.add(cover)
+                }
             }
         }
 
         runCatching { refreshSpotifyToken() }
         collect(Providers.APPLE, 0..5)
-        collect(Providers.SPOTIFY, 0..3)
+        collect(Providers.SPOTIFY, 0..5)
+
+        val rescueQueries = coverQueries.map { listOfNotNull(it.artistName?.takeIf { a -> a.isNotBlank() }, it.songName?.takeIf { s -> s.isNotBlank() }).joinToString(" ") }
+            .filter { it.isNotBlank() }
+            .distinct()
 
         // Top up with iTunes/Deezer artwork only when their canonicalized title/artist still look relevant.
         if (urls.size < max) {
-            val query = listOfNotNull(artist.takeIf { it.isNotBlank() }, title.takeIf { it.isNotBlank() }).joinToString(" ")
-            runCatching { lastResortAPI.canonicalize(query, max) }
-                .getOrDefault(emptyList())
-                .forEach { meta ->
-                    val cover = meta.coverUrl?.takeIf { it.isNotBlank() } ?: return@forEach
-                    if (urls.size < max && looksRelevant(meta.title, meta.artist)) urls.add(cover)
-                }
+            for (query in rescueQueries) {
+                runCatching { lastResortAPI.canonicalize(query, max) }
+                    .getOrDefault(emptyList())
+                    .forEach { meta ->
+                        val cover = meta.coverUrl?.takeIf { it.isNotBlank() } ?: return@forEach
+                        if (urls.size < max && looksRelevant(meta.title, meta.artist)) urls.add(cover)
+                    }
+                if (urls.size >= max) break
+            }
+        }
+
+        // If the picker is still too sparse, widen it with artist-related covers from the same canonicalized pool.
+        // This intentionally prefers "same artist, somewhat related title" over showing nothing at all.
+        if (urls.size < 4) {
+            for (query in rescueQueries) {
+                runCatching { lastResortAPI.canonicalize(query, max * 2) }
+                    .getOrDefault(emptyList())
+                    .forEach { meta ->
+                        val cover = meta.coverUrl?.takeIf { it.isNotBlank() } ?: return@forEach
+                        if (urls.size < max && looksArtistRelated(meta.title, meta.artist)) urls.add(cover)
+                    }
+                if (urls.size >= 4) break
+            }
+        }
+
+        // Final art-only fallback: if an exact track simply doesn't have many covers across the providers, fill the
+        // picker with same-artist covers rather than returning 0–1 choices. This keeps the picker useful while
+        // still avoiding completely unrelated art.
+        if (urls.size < 4) {
+            val artistQueries = coverQueries.mapNotNull { it.artistName?.takeIf { a -> a.isNotBlank() } }.distinct()
+            for (query in artistQueries) {
+                runCatching { lastResortAPI.canonicalize(query, max * 3) }
+                    .getOrDefault(emptyList())
+                    .forEach { meta ->
+                        val cover = meta.coverUrl?.takeIf { it.isNotBlank() } ?: return@forEach
+                        if (urls.size < max && looksSameArtist(meta.artist)) urls.add(cover)
+                    }
+                if (urls.size >= 4) break
+            }
         }
 
         return urls.toList()

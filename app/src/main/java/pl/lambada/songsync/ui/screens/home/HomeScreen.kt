@@ -134,7 +134,7 @@ fun HomeScreen(
         // so a blank manual-search entry point is redundant.
         bottomBar = { Spacer(Modifier.navigationBarsPadding()) } // fixing broken edge to edge here
     ) { paddingValues ->
-        Crossfade(viewModel.allSongs == null, label = "") { loading ->
+        Crossfade(viewModel.allSongs == null || viewModel.waitingForInitialLyricScan, label = "") { loading ->
             if (loading)
                 LoadingScreen()
             else
