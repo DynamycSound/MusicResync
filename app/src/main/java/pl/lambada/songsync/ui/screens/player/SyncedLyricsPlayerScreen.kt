@@ -77,7 +77,6 @@ import pl.lambada.songsync.util.buildNeutralLrc
 import pl.lambada.songsync.util.embedCoverInFile
 import pl.lambada.songsync.util.getFileDescriptorFromPath
 import pl.lambada.songsync.util.parseOffsetTagMs
-import pl.lambada.songsync.util.upsertOffsetTag
 import pl.lambada.songsync.util.cache.SongCache
 import pl.lambada.songsync.util.cache.SongCacheEntry
 import pl.lambada.songsync.util.ext.BackPressHandler
@@ -133,8 +132,6 @@ fun SyncedLyricsPlayerScreen(
     /** When arriving from "Adjust timing", the (not-yet-saved) lyrics are passed here so nothing is written
      *  until the user presses Apply or leaves via Back. Null when opening an already-saved song from Home. */
     initialLyrics: String? = null,
-    /** User setting: true bakes the offset into timestamps on save; false writes an `[offset:]` tag instead. */
-    directlyModifyTimestamps: Boolean = false,
     /** Optional cover fetcher used by the overflow-menu thumbnail action. */
     onRequestCovers: (suspend () -> List<String>)? = null,
 ) {
@@ -212,11 +209,10 @@ fun SyncedLyricsPlayerScreen(
     }
 
     // Persists the lyrics with the chosen timing, remembers the total offset for next time, marks the song as
-    // having lyrics, and returns to Home (where the row now shows a green note). Always rebuilds from the neutral
-    // lyrics (zero applied offset, no [offset:] tag) and applies the absolute slider value once, so re-saving can
-    // never double-shift. The on-disk model follows the user's setting:
-    //   directlyModifyTimestamps == true  -> bake the offset into the timestamps, no [offset:] tag
-    //   directlyModifyTimestamps == false -> keep neutral timestamps + exactly one [offset:] tag
+    // having lyrics, and returns to Home (where the row now shows a green note). Player Apply ALWAYS bakes the
+    // offset directly into the timestamps and strips any [offset:] tag. This is deliberate: external players are
+    // inconsistent about honouring offset tags, while directly shifted timestamps work everywhere and match what
+    // the user expects from an explicit timing adjustment.
     fun saveSync() {
         val total = offsetMs.roundToInt()
         val file = File(filePath.substringBeforeLast('.') + ".lrc")
@@ -227,13 +223,9 @@ fun SyncedLyricsPlayerScreen(
         }
         if (neutralBase.isBlank()) { onBack(); return }
         runCatching {
-            val output = if (directlyModifyTimestamps) {
-                // Bake the shift into the timestamps; ensure no stray offset tag remains.
-                if (total != 0) applyOffsetToLyrics(neutralBase, total) else neutralBase
-            } else {
-                // Neutral timestamps + a single offset tag carrying the absolute value.
-                upsertOffsetTag(neutralBase, total)
-            }
+            // Bake the shift into the timestamps; ensure no stray offset tag remains. Player Apply intentionally
+            // ignores the global "offset tag vs direct shift" preference and always writes the real shifted timing.
+            val output = if (total != 0) applyOffsetToLyrics(neutralBase, total) else neutralBase
             file.writeText(output.toCrlf())
             lrcText = output
             // Remember the offset + that this song now has (synced) lyrics, keeping any provider memory.

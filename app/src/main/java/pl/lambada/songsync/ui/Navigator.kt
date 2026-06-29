@@ -86,7 +86,6 @@ fun Navigator(
                     songName = args.songName,
                     artists = args.artists,
                     initialLyrics = args.lyrics,
-                    directlyModifyTimestamps = userSettingsController.directlyModifyTimestamps,
                     onRequestCovers = { lyricsProviderService.getCoverCandidates(args.songName, args.artists, args.filePath) },
                     // Preview mode (arrived from "Adjust timing & preview") should return to Home after Apply/Back,
                     // not to the intermediate search result screen that launched it.
