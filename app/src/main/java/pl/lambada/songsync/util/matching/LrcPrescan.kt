@@ -60,8 +60,16 @@ object LrcPrescan {
     /**
      * Ensures `<stem>.lrc` exists next to [audioPath] if any usable variant is present.
      * @return what was done (see [PrescanResult]).
+     *
+     * [dirCache] (optional, used by [scan]) memoises the per-directory `_private` file listing so a bulk scan
+     * lists each folder once instead of once per song — with thousands of songs in one folder the repeated
+     * `listFiles` calls dominated the scan and stalled every Home resume.
      */
-    fun resolveForAudio(audioPath: String): PrescanResult {
+    @JvmOverloads
+    fun resolveForAudio(
+        audioPath: String,
+        dirCache: MutableMap<String, List<File>>? = null,
+    ): PrescanResult {
         val audio = File(audioPath)
         val dir = audio.parentFile ?: return PrescanResult.NONE
         val stem = audio.nameWithoutExtension
@@ -69,7 +77,7 @@ object LrcPrescan {
 
         if (isSyncedLrc(target)) return PrescanResult.ALREADY_SYNCED
 
-        val candidates = collectPrivateVariants(dir, stem)
+        val candidates = collectPrivateVariants(dir, stem, dirCache)
         // Prefer a candidate that is actually synced; fall back to the first that exists.
         val best = candidates.firstOrNull { isSyncedLrc(it) } ?: candidates.firstOrNull()
             ?: return if (target.exists()) PrescanResult.ALREADY_PRESENT_UNSYNCED else PrescanResult.NONE
@@ -89,12 +97,26 @@ object LrcPrescan {
     }
 
     /** Private-suffixed lyrics files that belong to [stem], plain `_private` first then numbered ones. */
-    private fun collectPrivateVariants(dir: File, stem: String): List<File> {
+    private fun collectPrivateVariants(
+        dir: File,
+        stem: String,
+        dirCache: MutableMap<String, List<File>>? = null,
+    ): List<File> {
         val plain = File(dir, "${stem}_private.lrc")
-        val numbered = dir.listFiles { f ->
-            val n = f.name
-            n.startsWith(stem) && numberedPrivateSuffix.containsMatchIn(n)
-        }?.toList().orEmpty().sortedBy { it.name }
+        val numberedCandidates = if (dirCache != null) {
+            // One listing per directory for the whole bulk scan: keep only numbered `_private` files (usually
+            // none), then match the stem in-memory. `.exists()` below re-checks liveness, so a file renamed by
+            // an earlier song in the same scan is naturally dropped.
+            dirCache.getOrPut(dir.path) {
+                dir.listFiles { f -> numberedPrivateSuffix.containsMatchIn(f.name) }?.toList().orEmpty()
+            }.filter { it.name.startsWith(stem) }
+        } else {
+            dir.listFiles { f ->
+                val n = f.name
+                n.startsWith(stem) && numberedPrivateSuffix.containsMatchIn(n)
+            }?.toList().orEmpty()
+        }
+        val numbered = numberedCandidates.sortedBy { it.name }
         return (listOf(plain) + numbered).distinctBy { it.path }.filter { it.exists() }
     }
 
@@ -102,6 +124,8 @@ object LrcPrescan {
      * Runs [resolveForAudio] for every path. Returns a map of audioPath -> result so callers can
      * count how many songs gained lyrics without any network request.
      */
-    fun scan(audioPaths: List<String>): Map<String, PrescanResult> =
-        audioPaths.associateWith { resolveForAudio(it) }
+    fun scan(audioPaths: List<String>): Map<String, PrescanResult> {
+        val dirCache = HashMap<String, List<File>>()
+        return audioPaths.associateWith { resolveForAudio(it, dirCache) }
+    }
 }

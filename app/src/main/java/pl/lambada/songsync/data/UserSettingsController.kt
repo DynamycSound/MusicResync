@@ -84,6 +84,26 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     )
         private set
 
+    // Batch-download dialog toggles, remembered across runs (and app restarts) so users don't have to re-enable
+    // "Embed lyrics" / "Add unsynced fallback" etc. before every batch.
+    var batchSaveLrc by mutableStateOf(prefs[batchSaveLrcKey] ?: true)
+        private set
+
+    var batchEmbedLyrics by mutableStateOf(prefs[batchEmbedLyricsKey] ?: false)
+        private set
+
+    var batchAddUnsyncedFallback by mutableStateOf(prefs[batchAddUnsyncedFallbackKey] ?: false)
+        private set
+
+    var batchCorrectMetadata by mutableStateOf(prefs[batchCorrectMetadataKey] ?: false)
+        private set
+
+    var batchSkipExisting by mutableStateOf(prefs[batchSkipExistingKey] ?: true)
+        private set
+
+    var batchAutoTryProviders by mutableStateOf(prefs[batchAutoTryProvidersKey] ?: true)
+        private set
+
     var sortBy by mutableStateOf(
         SortValues.entries
             .find { it.name == (prefs[sortByKey] ?: SortValues.TITLE.name) }!!
@@ -155,6 +175,36 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         directlyModifyTimestamps = to
     }
 
+    fun updateBatchSaveLrc(to: Boolean) {
+        dataStore.set(batchSaveLrcKey, to)
+        batchSaveLrc = to
+    }
+
+    fun updateBatchEmbedLyrics(to: Boolean) {
+        dataStore.set(batchEmbedLyricsKey, to)
+        batchEmbedLyrics = to
+    }
+
+    fun updateBatchAddUnsyncedFallback(to: Boolean) {
+        dataStore.set(batchAddUnsyncedFallbackKey, to)
+        batchAddUnsyncedFallback = to
+    }
+
+    fun updateBatchCorrectMetadata(to: Boolean) {
+        dataStore.set(batchCorrectMetadataKey, to)
+        batchCorrectMetadata = to
+    }
+
+    fun updateBatchSkipExisting(to: Boolean) {
+        dataStore.set(batchSkipExistingKey, to)
+        batchSkipExisting = to
+    }
+
+    fun updateBatchAutoTryProviders(to: Boolean) {
+        dataStore.set(batchAutoTryProvidersKey, to)
+        batchAutoTryProviders = to
+    }
+
     fun updateSortOrder(to: SortOrders) {
         dataStore.set(sortOrderKey, to.queryName)
         sortOrder = to
@@ -181,3 +231,9 @@ private val showPathKey = booleanPreferencesKey("show_path")
 private val sortOrderKey = stringPreferencesKey("sort_order")
 private val sortByKey = stringPreferencesKey("sort_by")
 private val directlyModifyTimestampsKey = booleanPreferencesKey("directly_modify_timestamps")
+private val batchSaveLrcKey = booleanPreferencesKey("batch_save_lrc")
+private val batchEmbedLyricsKey = booleanPreferencesKey("batch_embed_lyrics")
+private val batchAddUnsyncedFallbackKey = booleanPreferencesKey("batch_add_unsynced_fallback")
+private val batchCorrectMetadataKey = booleanPreferencesKey("batch_correct_metadata")
+private val batchSkipExistingKey = booleanPreferencesKey("batch_skip_existing")
+private val batchAutoTryProvidersKey = booleanPreferencesKey("batch_auto_try_providers")

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
@@ -83,9 +84,11 @@ fun HomeScreen(
     var isBatchDownload by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
+    // ensureSongsLoaded (not a raw reload): this effect re-fires every time Home re-enters composition (back
+    // gesture from Settings/fetch/player), and unconditionally dropping the cache here re-ran the full
+    // MediaStore query + disk re-scan on every back navigation, freezing the UI on large libraries.
     LaunchedEffect(viewModel.userSettingsController.sortBy to viewModel.userSettingsController.sortOrder) {
-        viewModel.cachedSongs = null
-        viewModel.updateAllSongs(context, viewModel.userSettingsController.sortBy, viewModel.userSettingsController.sortOrder)
+        viewModel.ensureSongsLoaded(context, viewModel.userSettingsController.sortBy, viewModel.userSettingsController.sortOrder)
     }
 
     // Re-derive row colours from disk whenever Home comes back to the foreground, so a song lyric'd on the
@@ -190,7 +193,9 @@ fun HomeScreenLoaded(
     if (isBatchDownload) {
         BatchDownloadLyrics(
             viewModel = viewModel,
-            onDone = { onBatchDownloadState(false) })
+            onDone = { onBatchDownloadState(false) },
+            onNavigateToProgress = { navController.navigate(pl.lambada.songsync.ui.ScreenBatchProgress) },
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -366,14 +371,28 @@ fun HomeScreenLoaded(
         // Primary action: one tap opens the smart batch (fallback ladder + correct-metadata option). Hidden
         // on the "Has Lyrics" tab, where there is nothing left to fetch.
         if (viewModel.selectedTab != LyricsTab.HAS_LYRICS) {
+            // While a batch is running the FAB reopens the live progress screen instead of starting a new run.
+            val batchRunning = pl.lambada.songsync.util.batch.BatchDownloadController.isRunning
             ExtendedFloatingActionButton(
-                onClick = { onBatchDownloadState(true) },
+                onClick = {
+                    if (batchRunning) navController.navigate(pl.lambada.songsync.ui.ScreenBatchProgress)
+                    else onBatchDownloadState(true)
+                },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 20.dp),
-                icon = { Icon(Icons.Default.LibraryMusic, contentDescription = null) },
-                text = { Text(stringResource(id = R.string.batch_download_lyrics)) },
+                icon = {
+                    if (batchRunning) CircularProgressIndicator(modifier = Modifier.height(20.dp).width(20.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Default.LibraryMusic, contentDescription = null)
+                },
+                text = {
+                    Text(
+                        stringResource(
+                            id = if (batchRunning) R.string.show_live else R.string.batch_download_lyrics
+                        )
+                    )
+                },
             )
         }
     }

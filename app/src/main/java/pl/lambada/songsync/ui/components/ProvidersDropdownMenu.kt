@@ -38,6 +38,7 @@ fun ProvidersDropdownMenu(
     onDismissRequest: () -> Unit,
     selectedProvider: Providers,
     onProviderSelectRequest: (Providers) -> Unit,
+    providerStatus: ((Providers) -> String?)? = null,
 ) {
     AnimatedDropdownMenu(
         expanded = expanded,
@@ -47,6 +48,7 @@ fun ProvidersDropdownMenu(
             onDismissRequest = onDismissRequest,
             selectedProvider = selectedProvider,
             onProviderSelectRequest = onProviderSelectRequest,
+            providerStatus = providerStatus,
         )
     }
 }
@@ -56,6 +58,8 @@ fun ProvidersDropdownMenuContent(
     onDismissRequest: () -> Unit,
     selectedProvider: Providers,
     onProviderSelectRequest: (Providers) -> Unit,
+    /** Optional per-song memory line under each provider ("Found lyrics" / "No match found" / "Not tried yet"). */
+    providerStatus: ((Providers) -> String?)? = null,
 ) = Column {
     val providers = Providers.entries.toTypedArray()
     val dataStore = LocalContext.current.dataStore
@@ -69,10 +73,17 @@ fun ProvidersDropdownMenuContent(
         DropdownMenuItem(
             text = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = it.displayName,
-                        modifier = Modifier.padding(start = 6.dp)
-                    )
+                    Column(modifier = Modifier.padding(start = 6.dp)) {
+                        Text(text = it.displayName)
+                        val status = providerStatus?.invoke(it)
+                        if (status != null) {
+                            Text(
+                                text = status,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.weight(1f))
                     RadioButton(
                         selected = selectedProvider == it,

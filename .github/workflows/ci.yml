@@ -82,11 +82,22 @@ jobs:
           VERSION=$(grep -E 'versionName *=' app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
           echo "versionName = $VERSION"
           cp app/build/outputs/apk/release/app-release.apk "MusicResync-v$VERSION.apk"
+
+          # Prefer the hand-written RELEASE_NOTES.md when present, otherwise fall back to auto-generated notes.
+          NOTES_ARGS=(--generate-notes)
+          if [ -f RELEASE_NOTES.md ]; then
+            NOTES_ARGS=(--notes-file RELEASE_NOTES.md)
+          fi
+
           if gh release view "v$VERSION" >/dev/null 2>&1; then
+            # Refresh both the APK and the notes so re-pushing the same version updates the existing release.
             gh release upload "v$VERSION" "MusicResync-v$VERSION.apk" --clobber
+            if [ -f RELEASE_NOTES.md ]; then
+              gh release edit "v$VERSION" --notes-file RELEASE_NOTES.md
+            fi
           else
             gh release create "v$VERSION" "MusicResync-v$VERSION.apk" \
               --title "MusicResync v$VERSION" \
               --target "$GITHUB_SHA" \
-              --generate-notes
+              "${NOTES_ARGS[@]}"
           fi

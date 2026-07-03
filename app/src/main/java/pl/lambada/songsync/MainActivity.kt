@@ -6,6 +6,7 @@ import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -26,6 +27,8 @@ import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
 import pl.lambada.songsync.data.remote.lyrics_providers.spotify.SpotifySecrets
 import pl.lambada.songsync.ui.Navigator
 import pl.lambada.songsync.ui.theme.MusicResyncTheme
+import pl.lambada.songsync.util.batch.BatchDownloadController
+import pl.lambada.songsync.util.batch.BatchDownloadService
 import pl.lambada.songsync.util.dataStore
 import java.io.File
 
@@ -51,6 +54,7 @@ class MainActivity : ComponentActivity() {
         SpotifySecrets.init(applicationContext)
         checkOrCreateDownloadSubFolder()
         createNotificationChannel()
+        handleBatchIntent(intent)
 
         setContent {
             val navController = rememberNavController()
@@ -85,6 +89,19 @@ class MainActivity : ComponentActivity() {
             getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(2) // "Done" notification
         super.onResume()
+    }
+
+    // singleTask: a tap on the batch notification lands here when the activity already exists. The activity
+    // (and the running batch) is reused as-is; we only ask the navigator to show the batch screen.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleBatchIntent(intent)
+    }
+
+    private fun handleBatchIntent(intent: Intent?) {
+        if (intent?.action == BatchDownloadService.ACTION_OPEN_BATCH) {
+            BatchDownloadController.requestOpen()
+        }
     }
 }
 

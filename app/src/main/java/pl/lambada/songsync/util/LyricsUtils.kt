@@ -18,9 +18,9 @@ import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
 import pl.lambada.songsync.data.remote.lyrics_providers.MatchConfig
 import pl.lambada.songsync.data.remote.lyrics_providers.ScoredHit
 import pl.lambada.songsync.data.remote.lyrics_providers.SmartLyricsMatcher
+import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.domain.model.SongInfo
-import pl.lambada.songsync.ui.screens.home.HomeViewModel
 import pl.lambada.songsync.util.ext.sanitize
 import pl.lambada.songsync.util.ext.toLrcFile
 import pl.lambada.songsync.util.matching.FilenameParser
@@ -273,21 +273,37 @@ enum class Providers(val displayName: String, val hasWordByWord: Boolean) {
     NETEASE("Netease", false) { val inf = 0 },
 }
 
+/**
+ * A plain (unsynced) lyrics hit that was found during the batch but NOT saved because the unsynced fallback
+ * toggle was off. Kept in memory so the user can add them all with one tap from the batch screen.
+ */
+data class PendingPlainLyrics(
+    val song: Song,
+    val lrcContent: String,
+    val provider: Providers,
+    val matchedTitle: String?,
+    val matchedArtist: String?,
+)
+
 // only for invoking the task and handling and reporting progress
 suspend fun downloadLyrics(
     songs: List<Song>,
-    viewModel: HomeViewModel,
+    settings: UserSettingsController,
     context: Context,
     correctMetadata: Boolean = false,
     skipExisting: Boolean = true,
     autoTryProviders: Boolean = true,
     saveLrc: Boolean = true,
     embedLyrics: Boolean = false,
-    addUnsyncedFallback: Boolean = false,
-    onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int, skippedCount: Int) -> Unit,
-    onSongResult: (filePath: String, info: SongMatchInfo) -> Unit = { _, _ -> },
+    // Read per song (not once) so "Add all unsynced" can flip it ON while the batch is running.
+    addUnsyncedFallback: () -> Boolean = { false },
+    onPlainAvailable: ((PendingPlainLyrics) -> Unit)? = null,
+    onSongStarted: (Song) -> Unit = {},
+    onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int, skippedCount: Int) -> Unit = { _, _, _, _ -> },
+    onSongResult: (song: Song, info: SongMatchInfo) -> Unit = { _, _ -> },
     onDownloadComplete: () -> Unit,
     onRateLimitReached: () -> Unit,
+    onMetadataCorrected: (filePath: String, title: String?, artist: String?) -> Unit = { _, _, _ -> },
 ) {
     var successCount = 0   // songs we actually fetched & saved lyrics for this run
     var noLyricsCount = 0
@@ -307,15 +323,14 @@ suspend fun downloadLyrics(
         // CancellationException between songs, so no further lyrics are saved.
         coroutineContext.ensureActive()
 
-        val path = song.filePath
-        if (path != null) onSongResult(path, SongMatchInfo(LyricState.FETCHING))
+        onSongStarted(song)
 
         // skipExisting only skips songs that already have *synced* lyrics. A plain (unsynced) .lrc is treated
         // as missing -- we fetch a synced version and overwrite it -- so "Has Lyrics" never lies.
         val existingLrc = song.filePath.toLrcFile()
         val hasSynced = existingLrc?.exists() == true && LrcPrescan.isSyncedLrc(existingLrc)
         if (skipExisting && hasSynced) {
-            if (path != null) onSongResult(path, SongMatchInfo(LyricState.HAS_LYRICS))
+            onSongResult(song, SongMatchInfo(LyricState.HAS_LYRICS))
             // Already-synced songs are skipped, not downloaded — count them separately so the summary doesn't
             // inflate "Downloaded" with songs we never fetched.
             skippedCount++
@@ -340,7 +355,7 @@ suspend fun downloadLyrics(
         val songConfig = MatchConfig(providerOrder = providerOrder)
 
         // Always overwrite once we've decided to process: replaces a stale/plain .lrc with the synced result.
-        val info = matchAndSaveSong(song, viewModel, context, matcher, songConfig, correctMetadata, overwriteExisting = true, saveLrc = saveLrc, embedLyrics = embedLyrics, addUnsyncedFallback = addUnsyncedFallback)
+        val info = matchAndSaveSong(song, settings, context, matcher, songConfig, correctMetadata, overwriteExisting = true, saveLrc = saveLrc, embedLyrics = embedLyrics, addUnsyncedFallback = addUnsyncedFallback(), onMetadataCorrected = onMetadataCorrected, onPlainAvailable = onPlainAvailable)
 
         var rateLimited = false
         when (info.state) {
@@ -360,7 +375,7 @@ suspend fun downloadLyrics(
             providerSuccessCount[info.provider] = (providerSuccessCount[info.provider] ?: 0) + 1
         }
 
-        if (path != null) onSongResult(path, info)
+        onSongResult(song, info)
         onProgressUpdate(successCount, noLyricsCount, failedCount, skippedCount)
 
         // Too many consecutive failures => almost certainly rate-limited. Actually STOP the run (don't just flip a
@@ -383,7 +398,7 @@ suspend fun downloadLyrics(
  */
 suspend fun matchAndSaveSong(
     song: Song,
-    viewModel: HomeViewModel,
+    settings: UserSettingsController,
     context: Context,
     matcher: SmartLyricsMatcher,
     config: MatchConfig,
@@ -392,6 +407,8 @@ suspend fun matchAndSaveSong(
     saveLrc: Boolean = true,
     embedLyrics: Boolean = false,
     addUnsyncedFallback: Boolean = false,
+    onMetadataCorrected: (filePath: String, title: String?, artist: String?) -> Unit = { _, _, _ -> },
+    onPlainAvailable: ((PendingPlainLyrics) -> Unit)? = null,
 ): SongMatchInfo {
     val lrcFile = song.filePath.toLrcFile()
 
@@ -409,10 +426,14 @@ suspend fun matchAndSaveSong(
     )
     val candidates = FilenameParser.candidates(song.title, song.artist, song.filePath)
 
-    val hits = runCatching { matcher.search(local, candidates, config) }
+    // Which providers were actually queried for this song, in order. Persisted on the outcome so the
+    // song's provider list can later show "found / no match / not tried" per provider.
+    val attempted = LinkedHashSet<Providers>()
+
+    val hits = runCatching { matcher.search(local, candidates, config, onAttempt = { attempted.add(it) }) }
         .getOrElse {
             Log.e("MusicResync", "match failed for ${song.filePath}: ${it.message}")
-            return SongMatchInfo(LyricState.FAILED)
+            return SongMatchInfo(LyricState.FAILED, failedProviders = attempted.toList())
         }
 
     val topForReport = hits.firstOrNull()
@@ -434,18 +455,28 @@ suspend fun matchAndSaveSong(
     // fail honestly than silently save the wrong words. We only offer a plain LRCLib fallback when explicitly
     // enabled by the user.
     if (chosen == null || lyrics == null) {
-        if (addUnsyncedFallback) {
+        // Probe for plain (unsynced) lyrics even when the fallback toggle is off, so the batch can report
+        // "N unsynced available" and let the user add them all with one tap later.
+        if (addUnsyncedFallback || onPlainAvailable != null) {
             val plain = runCatching { matcher.fetchPlainLyrics(local, candidates, config) }.getOrNull()
             val plainBody = plain?.plainLyrics
             if (plainBody != null) {
                 val pTitle = plain.result.title
                 val pArtist = plain.result.artist
                 val songInfo = SongInfo(songName = pTitle, artistName = pArtist)
-                val lrcContent = formatLyrics(songInfo, plainBody, context, viewModel.userSettingsController.directlyModifyTimestamps)
-                val saved = runCatching {
-                    persistLyrics(context, song, lrcFile, lrcContent, saveLrc, embedLyrics, viewModel.userSettingsController.sdCardPath)
-                }.getOrDefault(false)
-                if (saved) return SongMatchInfo(LyricState.UNSYNCED, topForReport?.confidence?.percent(), plain.provider, pTitle, pArtist)
+                val lrcContent = formatLyrics(songInfo, plainBody, context, settings.directlyModifyTimestamps)
+                if (addUnsyncedFallback) {
+                    val saved = runCatching {
+                        persistLyrics(context, song, lrcFile, lrcContent, saveLrc, embedLyrics, settings.sdCardPath)
+                    }.getOrDefault(false)
+                    if (saved) return SongMatchInfo(
+                        LyricState.UNSYNCED, topForReport?.confidence?.percent(), plain.provider, pTitle, pArtist,
+                        failedProviders = (attempted - plain.provider).toList(),
+                    )
+                } else {
+                    // Found but not saved (toggle off): hand it to the caller so it can be added on demand.
+                    onPlainAvailable?.invoke(PendingPlainLyrics(song, lrcContent, plain.provider, pTitle, pArtist))
+                }
             }
         }
         return SongMatchInfo(
@@ -455,23 +486,27 @@ suspend fun matchAndSaveSong(
             matchedTitle = topForReport?.result?.title,
             matchedArtist = topForReport?.result?.artist,
             durationMatched = topForReport?.confidence?.durationMatched ?: false,
+            failedProviders = attempted.toList(),
         )
     }
 
     val best = chosen
     val songInfo = SongInfo(songName = best.result.title, artistName = best.result.artist)
-    val lrcContent = formatLyrics(songInfo, lyrics, context, viewModel.userSettingsController.directlyModifyTimestamps)
+    val lrcContent = formatLyrics(songInfo, lyrics, context, settings.directlyModifyTimestamps)
+
+    // Providers that were tried before the winning one and produced nothing usable for this song.
+    val failedForSong = (attempted - best.provider).toList()
 
     // Independent choices: write a sidecar .lrc and/or embed into the file. Default saves the .lrc. Honour the
     // embed boolean: a failed embed (no exception) must still count as a failure when it was the only target.
     val saved = runCatching {
-        persistLyrics(context, song, lrcFile, lrcContent, saveLrc, embedLyrics, viewModel.userSettingsController.sdCardPath)
+        persistLyrics(context, song, lrcFile, lrcContent, saveLrc, embedLyrics, settings.sdCardPath)
     }.getOrElse {
         Log.e("MusicResync", "saving .lrc failed for ${song.filePath}: ${it.message}")
         false
     }
     if (!saved) {
-        return SongMatchInfo(LyricState.FAILED, best.confidence.percent(), best.provider, best.result.title, best.result.artist)
+        return SongMatchInfo(LyricState.FAILED, best.confidence.percent(), best.provider, best.result.title, best.result.artist, failedProviders = failedForSong)
     }
 
     // Optional: when the user ticked "Correct the metadata", write the matched title/artist back to the audio
@@ -482,7 +517,7 @@ suspend fun matchAndSaveSong(
             val ok = writeCorrectedTags(context, song.filePath, best.result.title, best.result.artist)
             if (ok) {
                 // Refresh the row instantly so it doesn't keep showing the stale value (e.g. "Unknown")...
-                viewModel.refreshSongMetadata(song.filePath, best.result.title, best.result.artist)
+                onMetadataCorrected(song.filePath, best.result.title, best.result.artist)
                 // ...and tell MediaStore to re-read the file so the new tags survive the next cold start too.
                 android.media.MediaScannerConnection.scanFile(context, arrayOf(song.filePath), null, null)
             }
@@ -490,7 +525,7 @@ suspend fun matchAndSaveSong(
     }
 
     val state = if (best.tier == MatchTier.AUTO_ACCEPT) LyricState.SYNCED else LyricState.REVIEW
-    return SongMatchInfo(state, best.confidence.percent(), best.provider, best.result.title, best.result.artist, best.confidence.durationMatched)
+    return SongMatchInfo(state, best.confidence.percent(), best.provider, best.result.title, best.result.artist, best.confidence.durationMatched, failedProviders = failedForSong)
 }
 
 private fun formatLyrics(

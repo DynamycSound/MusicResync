@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.MusicOff
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -205,13 +206,16 @@ fun LyricStatusBadge(
     }
     val animatedTint by animateColorAsState(tint, label = "noteColor")
     val description = when (state) {
-        LyricState.UNSYNCED -> "Unsynced lyrics — needs syncing"
-        LyricState.NO_LYRICS, LyricState.FAILED -> "No lyrics"
+        LyricState.UNSYNCED -> "Unsynced lyrics, needs syncing"
+        LyricState.FAILED -> "Fetching failed, try again"
+        LyricState.NO_LYRICS -> "No lyrics"
         else -> "Has lyrics"
     }
 
     Icon(
-        imageVector = Icons.Filled.MusicNote,
+        // FAILED (a real fetch/save error, remembered across restarts) gets its own crossed-out note so it can
+        // be told apart from a plain "no lyrics found" row at a glance.
+        imageVector = if (state == LyricState.FAILED) Icons.Filled.MusicOff else Icons.Filled.MusicNote,
         contentDescription = description,
         tint = animatedTint,
         modifier = modifier.size(26.dp)

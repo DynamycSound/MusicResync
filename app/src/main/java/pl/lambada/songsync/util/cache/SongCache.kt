@@ -91,6 +91,10 @@ object SongCache {
         map[path] = (prev ?: SongCacheEntry(info.state)).copy(
             state = info.state,
             chosenProvider = info.provider?.displayName ?: prev?.chosenProvider,
+            // Remember which providers came up empty for this song (drives "found / no match / not tried"
+            // in the song's provider list). Only replace the remembered set when this run actually tried some.
+            failedProviders = info.failedProviders.map { it.displayName }
+                .ifEmpty { prev?.failedProviders ?: emptyList() },
             lastCheckedAt = System.currentTimeMillis(),
         )
     }
@@ -102,11 +106,21 @@ object SongCache {
     @Synchronized
     fun replaceStates(states: Map<String, LyricState>) {
         val now = System.currentTimeMillis()
+        var changed = false
         states.forEach { (path, st) ->
             val prev = map[path]
-            map[path] = (prev ?: SongCacheEntry(st)).copy(state = st, lastCheckedAt = now)
+            // A disk scan can only observe "no .lrc here" (NONE -> NO_LYRICS); it can't tell WHY. Keep the
+            // remembered FAILED state (a real fetch/save error) instead of flattening it into plain
+            // "no lyrics", so failed songs stay identifiable across restarts.
+            val effective = if (st == LyricState.NO_LYRICS && prev?.state == LyricState.FAILED) LyricState.FAILED else st
+            if (prev?.state != effective) {
+                map[path] = (prev ?: SongCacheEntry(effective)).copy(state = effective, lastCheckedAt = now)
+                changed = true
+            }
         }
-        flush()
+        // Skip the (large) JSON rewrite entirely when the scan found nothing new — this runs on every Home
+        // resume, and serializing thousands of entries each time was pure waste.
+        if (changed) flush()
     }
 
     @Synchronized
@@ -119,7 +133,8 @@ object SongCache {
     fun matchInfo(path: String): SongMatchInfo? {
         val e = map[path] ?: return null
         val provider = e.chosenProvider?.let { name -> Providers.entries.find { it.displayName == name } }
-        return SongMatchInfo(state = e.state, provider = provider)
+        val failed = e.failedProviders.mapNotNull { name -> Providers.entries.find { it.displayName == name } }
+        return SongMatchInfo(state = e.state, provider = provider, failedProviders = failed)
     }
 
     /** Persist the in-memory map atomically (write to a temp file, then rename). */
