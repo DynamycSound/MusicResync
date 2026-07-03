@@ -100,9 +100,17 @@ class LyricsProviderService {
             .map { view -> ConfidenceScorer.score(view, ProviderResult(remoteTitle, remoteArtist)) }
             .maxByOrNull { it.score }
 
+        // Do we actually know the local artist? If a filename gave us no artist we can't demand agreement, so
+        // relevance falls back to title only (the old behaviour) instead of rejecting everything.
+        val haveLocalArtist = localViews.any { !it.artist.isNullOrBlank() }
+
         fun looksRelevant(remoteTitle: String?, remoteArtist: String?): Boolean {
             val best = bestScore(remoteTitle, remoteArtist) ?: return false
-            return best.score >= ConfidenceScorer.REVIEW_THRESHOLD && best.title >= 0.55
+            // Require BOTH a solid title match and (when we know it) real artist agreement. The old check let a
+            // same-title-wrong-artist hit through, so covers for a totally different singer's song showed up.
+            val titleOk = best.title >= 0.55
+            val artistOk = !haveLocalArtist || best.artist >= 0.70
+            return best.score >= ConfidenceScorer.REVIEW_THRESHOLD && titleOk && artistOk
         }
 
         // Softer art-only relevance for the "I need more than one thumbnail" case: keep covers from obviously

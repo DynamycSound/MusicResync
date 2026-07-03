@@ -51,6 +51,27 @@ class ConfidenceScorerTest {
     }
 
     @Test
+    fun `right title wrong singer without duration is rejected`() {
+        // Known local artist that clearly disagrees, no duration confirmation -> must not save wrong-singer
+        // lyrics. This is the "gives me lyrics with the correct title but wrong singer" case.
+        val b = ConfidenceScorer.score(
+            LocalTrack(title = "Hello", artist = "Adele", durationSec = null),
+            ProviderResult("Hello", "Martin Solveig", durationSec = null)
+        )
+        assertEquals(MatchTier.REJECT, b.tier)
+    }
+
+    @Test
+    fun `right title wrong singer still accepted when duration matches exactly`() {
+        // A disagreeing artist tag is still trusted when the runtime matches exactly (garbage-tag rescue).
+        val b = ConfidenceScorer.score(
+            LocalTrack(title = "The Box", artist = "junk", durationSec = 196.0),
+            ProviderResult("The Box", "Roddy Ricch", 196.0)
+        )
+        assertEquals(MatchTier.AUTO_ACCEPT, b.tier)
+    }
+
+    @Test
     fun `bad duration prevents false auto-accept on common title`() {
         val b = ConfidenceScorer.score(
             LocalTrack(title = "Lights", artist = null, durationSec = 240.0),

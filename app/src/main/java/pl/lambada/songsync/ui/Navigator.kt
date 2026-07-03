@@ -3,6 +3,7 @@ package pl.lambada.songsync.ui
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -11,7 +12,9 @@ import kotlinx.serialization.Serializable
 import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
 import pl.lambada.songsync.ui.common.animatedComposable
+import pl.lambada.songsync.ui.screens.batch.BatchProgressScreen
 import pl.lambada.songsync.ui.screens.home.HomeScreen
+import pl.lambada.songsync.util.batch.BatchDownloadController
 import pl.lambada.songsync.ui.screens.home.HomeViewModel
 import pl.lambada.songsync.ui.screens.init.InitScreen
 import pl.lambada.songsync.ui.screens.init.InitScreenViewModel
@@ -33,6 +36,14 @@ fun Navigator(
     userSettingsController: UserSettingsController,
     lyricsProviderService: LyricsProviderService
 ) {
+    // Tapping the batch notification (or any other requester) asks for the batch screen here. The activity is
+    // singleTask, so the running task is reused and this only pushes the destination once.
+    LaunchedEffect(BatchDownloadController.openRequests) {
+        if (BatchDownloadController.openRequests > 0 && userSettingsController.passedInit) {
+            navController.navigate(ScreenBatchProgress) { launchSingleTop = true }
+        }
+    }
+
     SharedTransitionLayout {
         NavHost(
             navController = navController,
@@ -71,6 +82,9 @@ fun Navigator(
                     navController = navController,
                     animatedVisibilityScope = this,
                 )
+            }
+            animatedComposable<ScreenBatchProgress> {
+                BatchProgressScreen(onNavigateBack = { navController.popBackStack() })
             }
             animatedComposable<ScreenSettings> {
                 SettingsScreen(
@@ -136,6 +150,9 @@ data class LocalSong(
 
 @Serializable
 object ScreenSettings
+
+@Serializable
+object ScreenBatchProgress
 
 @Serializable
 data class PlayerScreen(

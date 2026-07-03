@@ -103,8 +103,14 @@ object ConfidenceScorer {
 
         var score = if (weightSum > 0) weighted / weightSum else 0.0
 
+        // Whether we could actually compare artists (both sides had one). When true, a low artistSim is real
+        // disagreement, not just missing data.
+        val artistComparable = !local.artist.isNullOrBlank() && !result.artist.isNullOrBlank()
+        val artistDisagrees = artistComparable && artistSim < 0.50
+
         // Duration tiebreak: a strong title plus an exact-length match is almost certainly the right track,
-        // even when the artist is unknown/wrong. Nudge it up so it can clear auto-accept.
+        // even when the artist tag is unknown or garbage. Exact duration is trusted here, so this still fires
+        // for the messy-filename case (junk artist tag) the app targets.
         if (durationMatched && titleSim >= 0.80 && score >= REVIEW_THRESHOLD && score < AUTO_ACCEPT_THRESHOLD) {
             score = AUTO_ACCEPT_THRESHOLD
         }
@@ -117,13 +123,22 @@ object ConfidenceScorer {
             score = REVIEW_THRESHOLD - 0.01
         }
 
+        var tier = tierFor(score)
+        // Right title, wrong singer: when we DO know the local artist and it clearly disagrees, and there's no
+        // exact-duration confirmation, this is almost always a different recording (a cover, or two unrelated
+        // songs that share a name). Saving its lyrics gives the user the wrong words, so reject it outright and
+        // let the song stay unmatched. We only trust a disagreeing artist when the runtime matches exactly.
+        if (tier != MatchTier.REJECT && artistDisagrees && !durationMatched) {
+            tier = MatchTier.REJECT
+        }
+
         return ConfidenceBreakdown(
             score = score.coerceIn(0.0, 1.0),
             title = titleSim,
             artist = artistSim,
             duration = durationSim,
             album = albumSim,
-            tier = tierFor(score),
+            tier = tier,
             durationMatched = durationMatched,
         )
     }

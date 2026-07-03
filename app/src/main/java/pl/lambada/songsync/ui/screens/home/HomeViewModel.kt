@@ -30,8 +30,8 @@ import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.domain.model.SortOrders
 import pl.lambada.songsync.domain.model.SortValues
+import pl.lambada.songsync.util.batch.BatchDownloadController
 import pl.lambada.songsync.util.cache.SongCache
-import pl.lambada.songsync.util.downloadLyrics
 import pl.lambada.songsync.util.matching.LrcPrescan
 import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.matching.PrescanResult
@@ -101,9 +101,9 @@ class HomeViewModel(
     var waitingForInitialLyricScan by mutableStateOf(false)
         private set
 
-    /** True while a batch download is running — gates the disk refresh so it can't clobber in-flight states. */
-    var batchRunning by mutableStateOf(false)
-        private set
+    /** True while a batch download is running, gates the disk refresh so it can't clobber in-flight states. */
+    val batchRunning: Boolean
+        get() = BatchDownloadController.isRunning
 
     var searchQuery by mutableStateOf("")
 
@@ -139,7 +139,15 @@ class HomeViewModel(
             (allSongs ?: listOf()).filter { selectedSongs.contains(it.filePath) }.toList()
     }
 
-    init { viewModelScope.launch { updateSongsToDisplay() } }
+    init {
+        viewModelScope.launch { updateSongsToDisplay() }
+        // Mirror live batch results (which now run app-scoped, not in this ViewModel) into the row-state map
+        // so the list recolors while the batch runs, exactly as it did when the batch lived here.
+        BatchDownloadController.onSongResultListener = { path, info -> songMatchStatus[path] = info }
+        BatchDownloadController.onMetadataCorrectedListener = { path, title, artist ->
+            refreshSongMetadata(path, title, artist)
+        }
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun updateSongsToDisplay() = coroutineScope {
@@ -229,8 +237,11 @@ class HomeViewModel(
                     // Only write real changes. A fresh SYNCED/REVIEW result from the batch coarsens to
                     // HAS_LYRICS on disk, so treat those as already-correct instead of downgrading the row
                     // (which dropped the confidence badge) and re-invalidating every list item on each resume.
+                    // Also keep FAILED: the disk scan can only see "no .lrc here", not why. A row that failed
+                    // during a batch stays marked as failed (distinct icon) instead of flattening to "no lyrics".
                     val equivalent = prev?.state == st ||
-                        (st == LyricState.HAS_LYRICS && (prev?.state == LyricState.SYNCED || prev?.state == LyricState.REVIEW))
+                        (st == LyricState.HAS_LYRICS && (prev?.state == LyricState.SYNCED || prev?.state == LyricState.REVIEW)) ||
+                        (st == LyricState.NO_LYRICS && prev?.state == LyricState.FAILED)
                     if (!equivalent) songMatchStatus[path] = SongMatchInfo(st)
                 }
                 // Persist the fresh truth (keeping each song's remembered offset/provider) for an instant next launch.
@@ -471,59 +482,17 @@ class HomeViewModel(
         }
     }
 
-    private var batchJob: kotlinx.coroutines.Job? = null
-
-    fun batchDownloadLyrics(
-        context: Context,
-        correctMetadata: Boolean = false,
-        skipExisting: Boolean = true,
-        autoTryProviders: Boolean = true,
-        saveLrc: Boolean = true,
-        embedLyrics: Boolean = false,
-        addUnsyncedFallback: Boolean = false,
-        onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int, skippedCount: Int) -> Unit,
-        onDownloadComplete: () -> Unit,
-        onRateLimitReached: () -> Unit
-    ): kotlinx.coroutines.Job {
-        batchRunning = true
-        // Run the whole batch off the main thread. downloadLyrics does blocking per-song work on the calling
-        // dispatcher — disk I/O (toLrcFile().exists(), isSyncedLrc, writeText), TagLib embedding, and JSON
-        // decoding — so launching it on the default (Main) dispatcher froze the UI for the entire run. The
-        // progress callbacks below only write Compose snapshot state, which is safe to update off the main thread.
-        val job = viewModelScope.launch(Dispatchers.IO) {
-            downloadLyrics(
-                songs = songsToBatchDownload,
-                viewModel = this@HomeViewModel,
-                context = context,
-                correctMetadata = correctMetadata,
-                skipExisting = skipExisting,
-                autoTryProviders = autoTryProviders,
-                saveLrc = saveLrc,
-                embedLyrics = embedLyrics,
-                addUnsyncedFallback = addUnsyncedFallback,
-                onProgressUpdate = onProgressUpdate,
-                onSongResult = { filePath, info ->
-                    songMatchStatus[filePath] = info
-                    SongCache.setStateDeferred(filePath, info)
-                },
-                onDownloadComplete = onDownloadComplete,
-                onRateLimitReached = onRateLimitReached,
-            )
-        }
-        batchJob = job
-        // Persist whatever was written, whether the batch finished or was cancelled.
-        job.invokeOnCompletion {
-            SongCache.flush()
-            batchRunning = false
-        }
-        return job
+    /**
+     * Starts the batch in the app-scoped [BatchDownloadController] (its own supervisor scope plus a foreground
+     * service), so it keeps running across navigation and while the app is in the background.
+     */
+    fun startBatchDownload(context: Context) {
+        BatchDownloadController.reset()
+        BatchDownloadController.start(context, songsToBatchDownload, userSettingsController)
     }
 
     /** Stops an in-progress batch download immediately (the loop checks for cancellation between songs). */
-    fun cancelBatch() {
-        batchJob?.cancel()
-        batchJob = null
-    }
+    fun cancelBatch() = BatchDownloadController.stop()
 
     /**
      * Patches a song's title/artist in every in-memory list the UI reads, so a row refreshes immediately after

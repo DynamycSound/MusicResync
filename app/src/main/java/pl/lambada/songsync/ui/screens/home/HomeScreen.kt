@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
@@ -192,7 +193,9 @@ fun HomeScreenLoaded(
     if (isBatchDownload) {
         BatchDownloadLyrics(
             viewModel = viewModel,
-            onDone = { onBatchDownloadState(false) })
+            onDone = { onBatchDownloadState(false) },
+            onNavigateToProgress = { navController.navigate(pl.lambada.songsync.ui.ScreenBatchProgress) },
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -368,14 +371,28 @@ fun HomeScreenLoaded(
         // Primary action: one tap opens the smart batch (fallback ladder + correct-metadata option). Hidden
         // on the "Has Lyrics" tab, where there is nothing left to fetch.
         if (viewModel.selectedTab != LyricsTab.HAS_LYRICS) {
+            // While a batch is running the FAB reopens the live progress screen instead of starting a new run.
+            val batchRunning = pl.lambada.songsync.util.batch.BatchDownloadController.isRunning
             ExtendedFloatingActionButton(
-                onClick = { onBatchDownloadState(true) },
+                onClick = {
+                    if (batchRunning) navController.navigate(pl.lambada.songsync.ui.ScreenBatchProgress)
+                    else onBatchDownloadState(true)
+                },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 20.dp),
-                icon = { Icon(Icons.Default.LibraryMusic, contentDescription = null) },
-                text = { Text(stringResource(id = R.string.batch_download_lyrics)) },
+                icon = {
+                    if (batchRunning) CircularProgressIndicator(modifier = Modifier.height(20.dp).width(20.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Default.LibraryMusic, contentDescription = null)
+                },
+                text = {
+                    Text(
+                        stringResource(
+                            id = if (batchRunning) R.string.show_live else R.string.batch_download_lyrics
+                        )
+                    )
+                },
             )
         }
     }

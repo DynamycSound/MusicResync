@@ -37,6 +37,8 @@ data class SongMatchInfo(
     val matchedTitle: String? = null,
     val matchedArtist: String? = null,
     val durationMatched: Boolean = false,
+    /** Providers that were queried for this song but produced no usable lyrics (persisted for the provider list). */
+    val failedProviders: List<Providers> = emptyList(),
 ) {
     val hasLyrics: Boolean
         get() = state == LyricState.HAS_LYRICS || state == LyricState.SYNCED ||

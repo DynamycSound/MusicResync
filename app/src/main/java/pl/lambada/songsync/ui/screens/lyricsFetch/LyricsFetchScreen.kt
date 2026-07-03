@@ -127,6 +127,11 @@ fun SharedTransitionScope.LyricsFetchScreen(
                             contentDescription = "More"
                         )
                     }
+                    // Remembered per-song provider outcome (from the last batch/fetch) shown under each
+                    // provider: which one found the lyrics, which found nothing, which was never tried.
+                    val providerMemory = remember(viewModel.source?.filePath, expandedProviders) {
+                        viewModel.source?.filePath?.let { pl.lambada.songsync.util.cache.SongCache.matchInfo(it) }
+                    }
                     ProvidersDropdownMenu(
                         expanded = expandedProviders,
                         selectedProvider = viewModel.userSettingsController.selectedProvider,
@@ -135,6 +140,19 @@ fun SharedTransitionScope.LyricsFetchScreen(
                             (viewModel.userSettingsController::updateSelectedProviders)(it)
                             if (viewModel.queryState != QueryStatus.NotSubmitted)
                                 viewModel.loadSongInfo(context)
+                        },
+                        providerStatus = providerMemory?.let { memory ->
+                            { provider ->
+                                when {
+                                    // chosenProvider is only ever recorded when it actually produced lyrics
+                                    // (synced or the unsynced fallback), so its presence means "found".
+                                    memory.provider == provider ->
+                                        context.getString(R.string.provider_status_found)
+                                    provider in memory.failedProviders ->
+                                        context.getString(R.string.provider_status_failed)
+                                    else -> context.getString(R.string.provider_status_not_tried)
+                                }
+                            }
                         },
                     )
                 },
