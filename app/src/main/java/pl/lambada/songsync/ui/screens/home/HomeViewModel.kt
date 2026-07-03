@@ -69,18 +69,26 @@ class HomeViewModel(
         else -> false
     }
 
-    /** Songs to show for the active tab (applied on top of the existing search/folder filters). */
-    val tabFilteredSongs: List<Song>
-        get() = when (selectedTab) {
+    /**
+     * Songs to show for the active tab (applied on top of the existing search/folder filters).
+     * derivedStateOf so the 9000-song filter runs once per actual data change, not on every
+     * recomposition read — a plain getter re-filtered the whole library each frame.
+     */
+    val tabFilteredSongs: List<Song> by derivedStateOf {
+        when (selectedTab) {
             LyricsTab.ALL -> displaySongs
             LyricsTab.HAS_LYRICS -> displaySongs.filter { songHasLyrics(it) }
             LyricsTab.NO_LYRICS -> displaySongs.filterNot { songHasLyrics(it) }
         }
+    }
+
+    /** Cached "has lyrics" count so the tab row doesn't rescan the whole library on every recomposition. */
+    private val hasLyricsCount by derivedStateOf { displaySongs.count { songHasLyrics(it) } }
 
     fun countFor(tab: LyricsTab): Int = when (tab) {
         LyricsTab.ALL -> displaySongs.size
-        LyricsTab.HAS_LYRICS -> displaySongs.count { songHasLyrics(it) }
-        LyricsTab.NO_LYRICS -> displaySongs.count { !songHasLyrics(it) }
+        LyricsTab.HAS_LYRICS -> hasLyricsCount
+        LyricsTab.NO_LYRICS -> displaySongs.size - hasLyricsCount
     }
 
     var isRefreshing by mutableStateOf(false)
@@ -151,7 +159,25 @@ class HomeViewModel(
             }
     }
 
+    /** The sort the current cachedSongs list was built with, so re-entering Home doesn't reload for nothing. */
+    private var appliedSort: Pair<SortValues, SortOrders>? = null
+
+    /**
+     * Loads the library only when actually needed: first composition, or a real sort change. Home's
+     * LaunchedEffect re-fires every time the screen re-enters composition (back gesture from Settings/search,
+     * returning to the app), and unconditionally nulling cachedSongs there re-ran the full MediaStore query and
+     * disk re-scan on every back navigation — the main source of the "app freezes after going back" reports.
+     */
+    fun ensureSongsLoaded(context: Context, sortBy: SortValues, sortOrder: SortOrders) {
+        val sort = sortBy to sortOrder
+        if (appliedSort == sort && cachedSongs != null) return
+        appliedSort = sort
+        cachedSongs = null
+        updateAllSongs(context, sortBy, sortOrder)
+    }
+
     fun updateAllSongs(context: Context, sortBy: SortValues, sortOrder: SortOrders) = viewModelScope.launch(Dispatchers.IO) {
+        appliedSort = sortBy to sortOrder
         // getAllSongs seeds row state instantly from the persistent cache, so the list renders immediately.
         allSongs = getAllSongs(context, sortBy, sortOrder)
         // Then verify against disk and replace the cached state with the fresh truth. Awaited so this job only
@@ -164,19 +190,31 @@ class HomeViewModel(
      * row reflects lyrics just saved on the fetch screen, or a sidecar .lrc added/removed outside the app.
      * No-op while a batch is running so it can't clobber in-flight FETCHING/SYNCED states.
      */
-    /** Fast, no-disk re-seed of row state from the persistent cache (e.g. after the player saved/removed lyrics). */
+    /**
+     * Fast, no-disk re-seed of row state from the persistent cache (e.g. after the player saved/removed lyrics).
+     * Runs on the main thread on every Home resume, so it only writes entries whose STATE actually changed:
+     * blindly rewriting all ~N entries flooded the snapshot system with invalidations (each write re-triggers the
+     * full-library tab filter) and also clobbered richer post-batch info (confidence badge) with the bare cached
+     * state.
+     */
     fun reseedFromCache() {
         val songs = cachedSongs ?: return
         songs.forEach { s ->
             val path = s.filePath ?: return@forEach
-            SongCache.matchInfo(path)?.let { songMatchStatus[path] = it }
+            SongCache.matchInfo(path)?.let {
+                if (songMatchStatus[path]?.state != it.state) songMatchStatus[path] = it
+            }
         }
     }
 
+    private var diskRefreshJob: kotlinx.coroutines.Job? = null
+
     fun refreshLyricStatesFromDisk(): kotlinx.coroutines.Job? {
         if (batchRunning) return null // don't clobber in-flight FETCHING/SYNCED states while a batch is saving
+        // Coalesce: rapid back-and-forth navigation used to pile up several concurrent full-library disk scans.
+        diskRefreshJob?.takeIf { it.isActive }?.let { return it }
         val songs = cachedSongs ?: return null
-        return viewModelScope.launch(Dispatchers.IO) {
+        val job = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val results = LrcPrescan.scan(songs.mapNotNull { it.filePath })
                 val states = results.mapValues { (_, r) ->
@@ -186,13 +224,23 @@ class HomeViewModel(
                         PrescanResult.NONE -> LyricState.NO_LYRICS
                     }
                 }
-                states.forEach { (path, st) -> songMatchStatus[path] = SongMatchInfo(st) }
+                states.forEach { (path, st) ->
+                    val prev = songMatchStatus[path]
+                    // Only write real changes. A fresh SYNCED/REVIEW result from the batch coarsens to
+                    // HAS_LYRICS on disk, so treat those as already-correct instead of downgrading the row
+                    // (which dropped the confidence badge) and re-invalidating every list item on each resume.
+                    val equivalent = prev?.state == st ||
+                        (st == LyricState.HAS_LYRICS && (prev?.state == LyricState.SYNCED || prev?.state == LyricState.REVIEW))
+                    if (!equivalent) songMatchStatus[path] = SongMatchInfo(st)
+                }
                 // Persist the fresh truth (keeping each song's remembered offset/provider) for an instant next launch.
                 SongCache.replaceStates(states)
             } finally {
                 waitingForInitialLyricScan = false
             }
         }
+        diskRefreshJob = job
+        return job
     }
 
     /**

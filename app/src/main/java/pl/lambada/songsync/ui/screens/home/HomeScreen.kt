@@ -83,9 +83,11 @@ fun HomeScreen(
     var isBatchDownload by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
+    // ensureSongsLoaded (not a raw reload): this effect re-fires every time Home re-enters composition (back
+    // gesture from Settings/fetch/player), and unconditionally dropping the cache here re-ran the full
+    // MediaStore query + disk re-scan on every back navigation, freezing the UI on large libraries.
     LaunchedEffect(viewModel.userSettingsController.sortBy to viewModel.userSettingsController.sortOrder) {
-        viewModel.cachedSongs = null
-        viewModel.updateAllSongs(context, viewModel.userSettingsController.sortBy, viewModel.userSettingsController.sortOrder)
+        viewModel.ensureSongsLoaded(context, viewModel.userSettingsController.sortBy, viewModel.userSettingsController.sortOrder)
     }
 
     // Re-derive row colours from disk whenever Home comes back to the foreground, so a song lyric'd on the

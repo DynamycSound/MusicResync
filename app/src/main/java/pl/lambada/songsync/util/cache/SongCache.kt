@@ -102,11 +102,17 @@ object SongCache {
     @Synchronized
     fun replaceStates(states: Map<String, LyricState>) {
         val now = System.currentTimeMillis()
+        var changed = false
         states.forEach { (path, st) ->
             val prev = map[path]
-            map[path] = (prev ?: SongCacheEntry(st)).copy(state = st, lastCheckedAt = now)
+            if (prev?.state != st) {
+                map[path] = (prev ?: SongCacheEntry(st)).copy(state = st, lastCheckedAt = now)
+                changed = true
+            }
         }
-        flush()
+        // Skip the (large) JSON rewrite entirely when the scan found nothing new — this runs on every Home
+        // resume, and serializing thousands of entries each time was pure waste.
+        if (changed) flush()
     }
 
     @Synchronized

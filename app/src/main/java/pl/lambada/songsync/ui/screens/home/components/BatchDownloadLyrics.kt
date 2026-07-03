@@ -28,12 +28,15 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
     var noLyricsCount by rememberSaveable { mutableIntStateOf(0) }
     var failedCount by rememberSaveable { mutableIntStateOf(0) }
     var skippedCount by rememberSaveable { mutableIntStateOf(0) }
-    var correctMetadata by rememberSaveable { mutableStateOf(false) }
-    var skipExisting by rememberSaveable { mutableStateOf(true) }
-    var autoTryProviders by rememberSaveable { mutableStateOf(true) }
-    var saveLrc by rememberSaveable { mutableStateOf(true) }            // default ON (Samsung-compatible)
-    var embedLyrics by rememberSaveable { mutableStateOf(false) }       // default OFF
-    var addUnsyncedFallback by rememberSaveable { mutableStateOf(false) } // default OFF (synced-only)
+    // Toggles live in persisted user settings (not per-dialog rememberSaveable) so choices like
+    // "Embed lyrics to file" and "Add unsynced fallback" survive between runs and app restarts.
+    val settings = viewModel.userSettingsController
+    val correctMetadata = settings.batchCorrectMetadata
+    val skipExisting = settings.batchSkipExisting
+    val autoTryProviders = settings.batchAutoTryProviders
+    val saveLrc = settings.batchSaveLrc                       // default ON (Samsung-compatible)
+    val embedLyrics = settings.batchEmbedLyrics               // default OFF
+    val addUnsyncedFallback = settings.batchAddUnsyncedFallback // default OFF (synced-only)
     val count = successCount + failedCount + noLyricsCount + skippedCount
     val total = songs.size
     // Songs the batch will actually process when skipExisting is on = those WITHOUT synced lyrics. UNSYNCED
@@ -53,14 +56,16 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
             noLyricsCount = 0
             failedCount = 0
             skippedCount = 0
+            // Read the toggles from settings at call time: this lambda is remember{}ed, so capturing the
+            // composable-local snapshot values would freeze them at their first-composition state.
             viewModel.batchDownloadLyrics(
                 context,
-                correctMetadata = correctMetadata,
-                skipExisting = skipExisting,
-                autoTryProviders = autoTryProviders,
-                saveLrc = saveLrc,
-                embedLyrics = embedLyrics,
-                addUnsyncedFallback = addUnsyncedFallback,
+                correctMetadata = settings.batchCorrectMetadata,
+                skipExisting = settings.batchSkipExisting,
+                autoTryProviders = settings.batchAutoTryProviders,
+                saveLrc = settings.batchSaveLrc,
+                embedLyrics = settings.batchEmbedLyrics,
+                addUnsyncedFallback = settings.batchAddUnsyncedFallback,
                 onProgressUpdate = { newSuccessCount, newNoLyricsCount, newFailedCount, newSkippedCount ->
                     successCount = newSuccessCount
                     noLyricsCount = newNoLyricsCount
@@ -92,17 +97,17 @@ fun BatchDownloadLyrics(viewModel: HomeViewModel, onDone: () -> Unit) {
             },
             onDismiss = { uiState = UiState.Cancelled },
             saveLrc = saveLrc,
-            onSaveLrcChangeRequest = { saveLrc = it },
+            onSaveLrcChangeRequest = settings::updateBatchSaveLrc,
             embedLyrics = embedLyrics,
-            onEmbedLyricsChangeRequest = { embedLyrics = it },
+            onEmbedLyricsChangeRequest = settings::updateBatchEmbedLyrics,
             correctMetadata = correctMetadata,
-            onCorrectMetadataChangeRequest = { correctMetadata = it },
+            onCorrectMetadataChangeRequest = settings::updateBatchCorrectMetadata,
             skipExisting = skipExisting,
-            onSkipExistingChangeRequest = { skipExisting = it },
+            onSkipExistingChangeRequest = settings::updateBatchSkipExisting,
             autoTryProviders = autoTryProviders,
-            onAutoTryProvidersChangeRequest = { autoTryProviders = it },
+            onAutoTryProvidersChangeRequest = settings::updateBatchAutoTryProviders,
             addUnsyncedFallback = addUnsyncedFallback,
-            onAddUnsyncedFallbackChangeRequest = { addUnsyncedFallback = it },
+            onAddUnsyncedFallbackChangeRequest = settings::updateBatchAddUnsyncedFallback,
         )
 
         UiState.LegacyPrompt -> LegacyPromptDialog(
