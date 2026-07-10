@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
@@ -75,6 +76,7 @@ import pl.lambada.songsync.ui.screens.lyricsFetch.components.ThumbnailPickerDial
 import pl.lambada.songsync.util.applyOffsetToLyrics
 import pl.lambada.songsync.util.buildNeutralLrc
 import pl.lambada.songsync.util.embedCoverInFile
+import pl.lambada.songsync.util.embedLyricsInFile
 import pl.lambada.songsync.util.getFileDescriptorFromPath
 import pl.lambada.songsync.util.parseOffsetTagMs
 import pl.lambada.songsync.util.cache.SongCache
@@ -208,12 +210,11 @@ fun SyncedLyricsPlayerScreen(
         runCatching { if (!player.isPlaying) { player.start(); isPlaying = true } }
     }
 
-    // Persists the lyrics with the chosen timing, remembers the total offset for next time, marks the song as
-    // having lyrics, and returns to Home (where the row now shows a green note). Player Apply ALWAYS bakes the
-    // offset directly into the timestamps and strips any [offset:] tag. This is deliberate: external players are
-    // inconsistent about honouring offset tags, while directly shifted timestamps work everywhere and match what
-    // the user expects from an explicit timing adjustment.
-    fun saveSync() {
+    // The offset-tuned LRC the user is currently previewing: the neutral lyrics with the slider's absolute offset
+    // baked into the timestamps and no stray [offset:] tag. Shared by Apply (writes the sidecar .lrc) and
+    // "Embed lyrics to file" (writes the audio tag) so both persist exactly what's on screen. Returns blank only
+    // when there are genuinely no lyrics to save.
+    fun currentTunedLrc(): String {
         val total = offsetMs.roundToInt()
         val file = File(filePath.substringBeforeLast('.') + ".lrc")
         val neutralBase = neutralLrc.ifBlank {
@@ -221,11 +222,23 @@ fun SyncedLyricsPlayerScreen(
                 ?.let { buildNeutralLrc(it, parseOffsetTagMs(it).let { tag -> if (tag != 0) tag else cachedOffsetMs }, parseOffsetTagMs(it) != 0) }
                 .orEmpty()
         }
-        if (neutralBase.isBlank()) { onBack(); return }
+        if (neutralBase.isBlank()) return ""
+        return if (total != 0) applyOffsetToLyrics(neutralBase, total) else neutralBase
+    }
+
+    // Persists the lyrics with the chosen timing, remembers the total offset for next time, marks the song as
+    // having lyrics, and returns to Home (where the row now shows a green note). Player Apply ALWAYS bakes the
+    // offset directly into the timestamps and strips any [offset:] tag. This is deliberate: external players are
+    // inconsistent about honouring offset tags, while directly shifted timestamps work everywhere and match what
+    // the user expects from an explicit timing adjustment.
+    fun saveSync() {
+        val total = offsetMs.roundToInt()
+        val output = currentTunedLrc()
+        if (output.isBlank()) { onBack(); return }
+        val file = File(filePath.substringBeforeLast('.') + ".lrc")
         runCatching {
             // Bake the shift into the timestamps; ensure no stray offset tag remains. Player Apply intentionally
             // ignores the global "offset tag vs direct shift" preference and always writes the real shifted timing.
-            val output = if (total != 0) applyOffsetToLyrics(neutralBase, total) else neutralBase
             file.writeText(output.toCrlf())
             lrcText = output
             // Remember the offset + that this song now has (synced) lyrics, keeping any provider memory.
@@ -235,6 +248,30 @@ fun SyncedLyricsPlayerScreen(
         }.onSuccess {
             showToast(context, context.getString(R.string.sync_saved))
             onBack()
+        }
+    }
+
+    // Writes the offset-tuned lyrics straight into the audio file's own tags (the LYRICS frame) instead of only
+    // the sidecar .lrc. This restores original SongSync's detail-screen behaviour: keep nudging the offset and
+    // embed the freshly tuned lyrics as many times as you like. Runs off the main thread (TagLib does file I/O)
+    // and deliberately leaves the .lrc and the remembered offset untouched, so re-opening the player still
+    // reconciles from a single source and never double-applies the shift.
+    fun embedTunedLyrics() {
+        val output = currentTunedLrc()
+        if (output.isBlank()) {
+            showToast(context, context.getString(R.string.error))
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            // embedLyricsInFile returns false (without throwing) when the tag write fails or is denied, so use its
+            // boolean rather than assuming success.
+            val embedded = runCatching { embedLyricsInFile(context, filePath, output) }.getOrDefault(false)
+            withContext(Dispatchers.Main) {
+                showToast(
+                    context,
+                    context.getString(if (embedded) R.string.embedded_lyrics_in_file else R.string.error)
+                )
+            }
         }
     }
 
@@ -324,6 +361,11 @@ fun SyncedLyricsPlayerScreen(
                             text = { Text("Find lyrics online") },
                             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                             onClick = { menuExpanded = false; onFindOnline() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.embed_lyrics_in_file)) },
+                            leadingIcon = { Icon(Icons.Filled.MusicNote, contentDescription = null) },
+                            onClick = { menuExpanded = false; embedTunedLyrics() }
                         )
                         DropdownMenuItem(
                             text = { Text("Remove current lyrics") },
