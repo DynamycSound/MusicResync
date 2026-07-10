@@ -101,6 +101,11 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     var batchSkipExisting by mutableStateOf(prefs[batchSkipExistingKey] ?: true)
         private set
 
+    // Default ON: songs that failed a previous run (rate limits, no usable match) are left out so a rerun doesn't
+    // keep hammering them. Turn off to retry the failed ones.
+    var batchSkipPreviouslyFailed by mutableStateOf(prefs[batchSkipPreviouslyFailedKey] ?: true)
+        private set
+
     var batchAutoTryProviders by mutableStateOf(prefs[batchAutoTryProvidersKey] ?: true)
         private set
 
@@ -200,6 +205,11 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         batchSkipExisting = to
     }
 
+    fun updateBatchSkipPreviouslyFailed(to: Boolean) {
+        dataStore.set(batchSkipPreviouslyFailedKey, to)
+        batchSkipPreviouslyFailed = to
+    }
+
     fun updateBatchAutoTryProviders(to: Boolean) {
         dataStore.set(batchAutoTryProvidersKey, to)
         batchAutoTryProviders = to
@@ -236,4 +246,5 @@ private val batchEmbedLyricsKey = booleanPreferencesKey("batch_embed_lyrics")
 private val batchAddUnsyncedFallbackKey = booleanPreferencesKey("batch_add_unsynced_fallback")
 private val batchCorrectMetadataKey = booleanPreferencesKey("batch_correct_metadata")
 private val batchSkipExistingKey = booleanPreferencesKey("batch_skip_existing")
+private val batchSkipPreviouslyFailedKey = booleanPreferencesKey("batch_skip_previously_failed")
 private val batchAutoTryProvidersKey = booleanPreferencesKey("batch_auto_try_providers")

@@ -67,6 +67,8 @@ fun BatchDownloadLyrics(
             onCorrectMetadataChangeRequest = settings::updateBatchCorrectMetadata,
             skipExisting = settings.batchSkipExisting,
             onSkipExistingChangeRequest = settings::updateBatchSkipExisting,
+            skipPreviouslyFailed = settings.batchSkipPreviouslyFailed,
+            onSkipPreviouslyFailedChangeRequest = settings::updateBatchSkipPreviouslyFailed,
             autoTryProviders = settings.batchAutoTryProviders,
             onAutoTryProvidersChangeRequest = settings::updateBatchAutoTryProviders,
             addUnsyncedFallback = settings.batchAddUnsyncedFallback,

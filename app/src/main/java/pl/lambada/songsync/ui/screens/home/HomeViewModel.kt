@@ -131,12 +131,19 @@ class HomeViewModel(
     var showSearch by mutableStateOf(showingSearch)
 
     val songsToBatchDownload by derivedStateOf {
-        if (selectedSongs.isEmpty())
+        val base = if (selectedSongs.isEmpty())
             // No explicit selection -> operate on exactly what the user currently sees, which includes the active
             // tab filter (All / Has lyrics / No lyrics), not just the search/folder-filtered displaySongs.
             tabFilteredSongs
         else
             (allSongs ?: listOf()).filter { selectedSongs.contains(it.filePath) }.toList()
+
+        // "Skip previously failed" (on by default): drop songs whose last run failed so a rerun doesn't keep
+        // hammering them. Filtering the shared list here keeps the options-dialog count and the actual run in sync.
+        if (userSettingsController.batchSkipPreviouslyFailed)
+            base.filter { lyricStateFor(it) != LyricState.FAILED }
+        else
+            base
     }
 
     init {
