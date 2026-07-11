@@ -77,6 +77,12 @@ object BatchDownloadController {
     var onSongResultListener: ((filePath: String, info: SongMatchInfo) -> Unit)? = null
     var onMetadataCorrectedListener: ((filePath: String, title: String?, artist: String?) -> Unit)? = null
 
+    /** Wall-clock bounds of the current/last run, for ETA and the "Finished in" line. 0 = not set. */
+    var runStartedAt = 0L
+        private set
+    var runFinishedAt = 0L
+        private set
+
     /** Incremented when something (the notification) asks the UI to open the batch screen. */
     var openRequests by mutableIntStateOf(0)
         private set
@@ -109,6 +115,8 @@ object BatchDownloadController {
         runSaveLrc = settings.batchSaveLrc
         runEmbedLyrics = settings.batchEmbedLyrics
         runSettings = settings
+        runStartedAt = System.currentTimeMillis()
+        runFinishedAt = 0L
         _progress.value = Progress(0, songs.size, null)
 
         // Foreground service + notification from the very start, so the run is already protected while the
@@ -149,6 +157,7 @@ object BatchDownloadController {
                 SongCache.flush()
                 if (status == Status.RUNNING) status = Status.CANCELLED
                 currentSong = null
+                runFinishedAt = System.currentTimeMillis()
                 _progress.value = _progress.value.copy(done = processed.size, finished = true)
             }
         }

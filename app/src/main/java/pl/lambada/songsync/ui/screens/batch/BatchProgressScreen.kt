@@ -83,10 +83,12 @@ import com.google.accompanist.permissions.rememberPermissionState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.core.app.NotificationManagerCompat
 import pl.lambada.songsync.R
 import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.util.batch.BatchDownloadController
 import pl.lambada.songsync.util.batch.BatchDownloadController.Status
+import pl.lambada.songsync.util.batch.BatchDownloadService
 import pl.lambada.songsync.util.ext.toLrcFile
 import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.showToast
@@ -125,6 +127,13 @@ fun BatchProgressScreen(onNavigateBack: () -> Unit) {
 
     var showKeepAliveDialog by remember { mutableStateOf(false) }
     var lyricsSheetSong by remember { mutableStateOf<Song?>(null) }
+
+    // The user is looking at the results now; the summary notification has served its purpose.
+    LaunchedEffect(controller.status) {
+        if (controller.status != Status.RUNNING) {
+            NotificationManagerCompat.from(context).cancel(BatchDownloadService.RESULTS_NOTIFICATION_ID)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -334,6 +343,7 @@ private fun LivePage(controller: BatchDownloadController) {
                 )
             },
             title = stringResource(R.string.batch_done_title),
+            subtitle = elapsedLabel(controller),
         )
         Status.RATE_LIMITED, Status.CANCELLED -> StatusPage(
             icon = {
@@ -349,7 +359,7 @@ private fun LivePage(controller: BatchDownloadController) {
 }
 
 @Composable
-private fun StatusPage(icon: @Composable () -> Unit, title: String) {
+private fun StatusPage(icon: @Composable () -> Unit, title: String, subtitle: String? = null) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -360,7 +370,29 @@ private fun StatusPage(icon: @Composable () -> Unit, title: String) {
         icon()
         Spacer(Modifier.height(12.dp))
         Text(title, style = MaterialTheme.typography.titleLarge)
+        if (subtitle != null) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
+}
+
+/** "Finished in 4 min 12 sec" for the Done page; null when the run bounds are unknown. */
+@Composable
+private fun elapsedLabel(controller: BatchDownloadController): String? {
+    val start = controller.runStartedAt
+    val end = controller.runFinishedAt
+    if (start <= 0L || end <= start) return null
+    val totalSec = ((end - start) / 1000).coerceAtLeast(1)
+    val min = (totalSec / 60).toInt()
+    val sec = (totalSec % 60).toInt()
+    val duration = if (min > 0) stringResource(R.string.duration_min_sec, min, sec)
+    else stringResource(R.string.duration_sec, sec)
+    return stringResource(R.string.batch_finished_in, duration)
 }
 
 /** One pager page: big album art, title/artist, and a small state line underneath. */
