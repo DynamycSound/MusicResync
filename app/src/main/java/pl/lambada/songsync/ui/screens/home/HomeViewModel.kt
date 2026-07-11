@@ -138,10 +138,17 @@ class HomeViewModel(
         else
             (allSongs ?: listOf()).filter { selectedSongs.contains(it.filePath) }.toList()
 
-        // "Skip previously failed" (on by default): drop songs whose last run failed so a rerun doesn't keep
-        // hammering them. Filtering the shared list here keeps the options-dialog count and the actual run in sync.
-        if (userSettingsController.batchSkipPreviouslyFailed)
-            base.filter { lyricStateFor(it) != LyricState.FAILED }
+        // "Skip songs with no lyrics" (on by default): drop songs a previous run already searched and came up
+        // empty for, so a rerun doesn't keep asking the providers for songs that have nothing. The marker is a
+        // NO_LYRICS state WITH a non-empty failedProviders list (set only when a real fetch ran) - this excludes
+        // songs the disk pre-scan merely seeded as NO_LYRICS but never actually tried, so a first batch still runs
+        // them. FAILED (network/IO errors) is deliberately left in so those get retried. Filtering the shared list
+        // here keeps the options-dialog count and the actual run in sync.
+        if (userSettingsController.batchSkipNoLyrics)
+            base.filterNot { song ->
+                val info = songMatchStatus[song.filePath]
+                info?.state == LyricState.NO_LYRICS && info.failedProviders.isNotEmpty()
+            }
         else
             base
     }

@@ -1,5 +1,4 @@
-## MusicResync v1.5.2
+## MusicResync v1.5.3
 
 ### Hotfix
-- New "Skip previously failed songs" option in the batch download's More options, on by default. Songs that failed a previous run are left out so a rerun does not keep hammering the ones that never had lyrics. Turn it off when you want to retry them.
-- Adjust timing can now embed the tuned lyrics into the song file, not just the .lrc. Open a song, nudge the offset, and pick "Embed lyrics to file" from the menu to write the current timing straight into the audio tags. Keep tuning and re-embed as many times as you want, so players that read embedded lyrics stay in sync too.
+- Fixed what the batch "skip" option targets. It is now "Skip songs with no lyrics" and it leaves out songs a previous run already searched and found nothing for, so a rerun stops asking the providers for songs that have nothing. Songs that errored out (network or write problems) are still retried, since those can work on a second try. On by default, and songs that were never tried yet always run. In 1.5.2 this skipped the errored songs and kept re-checking the empty ones, which was backwards.

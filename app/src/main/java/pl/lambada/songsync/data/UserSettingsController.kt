@@ -101,9 +101,10 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     var batchSkipExisting by mutableStateOf(prefs[batchSkipExistingKey] ?: true)
         private set
 
-    // Default ON: songs that failed a previous run (rate limits, no usable match) are left out so a rerun doesn't
-    // keep hammering them. Turn off to retry the failed ones.
-    var batchSkipPreviouslyFailed by mutableStateOf(prefs[batchSkipPreviouslyFailedKey] ?: true)
+    // Default ON: songs a previous run already searched and found no lyrics for are left out so a rerun doesn't
+    // keep asking the providers for songs that have nothing. Songs that errored out (network/IO) are still
+    // retried. Turn off to re-check the empty ones too.
+    var batchSkipNoLyrics by mutableStateOf(prefs[batchSkipNoLyricsKey] ?: true)
         private set
 
     var batchAutoTryProviders by mutableStateOf(prefs[batchAutoTryProvidersKey] ?: true)
@@ -205,9 +206,9 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         batchSkipExisting = to
     }
 
-    fun updateBatchSkipPreviouslyFailed(to: Boolean) {
-        dataStore.set(batchSkipPreviouslyFailedKey, to)
-        batchSkipPreviouslyFailed = to
+    fun updateBatchSkipNoLyrics(to: Boolean) {
+        dataStore.set(batchSkipNoLyricsKey, to)
+        batchSkipNoLyrics = to
     }
 
     fun updateBatchAutoTryProviders(to: Boolean) {
@@ -246,5 +247,5 @@ private val batchEmbedLyricsKey = booleanPreferencesKey("batch_embed_lyrics")
 private val batchAddUnsyncedFallbackKey = booleanPreferencesKey("batch_add_unsynced_fallback")
 private val batchCorrectMetadataKey = booleanPreferencesKey("batch_correct_metadata")
 private val batchSkipExistingKey = booleanPreferencesKey("batch_skip_existing")
-private val batchSkipPreviouslyFailedKey = booleanPreferencesKey("batch_skip_previously_failed")
+private val batchSkipNoLyricsKey = booleanPreferencesKey("batch_skip_no_lyrics")
 private val batchAutoTryProvidersKey = booleanPreferencesKey("batch_auto_try_providers")

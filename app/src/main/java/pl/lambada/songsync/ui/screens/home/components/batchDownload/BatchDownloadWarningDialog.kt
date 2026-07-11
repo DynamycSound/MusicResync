@@ -44,8 +44,8 @@ fun BatchDownloadWarningDialog(
     onCorrectMetadataChangeRequest: (Boolean) -> Unit,
     skipExisting: Boolean,
     onSkipExistingChangeRequest: (Boolean) -> Unit,
-    skipPreviouslyFailed: Boolean,
-    onSkipPreviouslyFailedChangeRequest: (Boolean) -> Unit,
+    skipNoLyrics: Boolean,
+    onSkipNoLyricsChangeRequest: (Boolean) -> Unit,
     autoTryProviders: Boolean,
     onAutoTryProvidersChangeRequest: (Boolean) -> Unit,
     addUnsyncedFallback: Boolean,
@@ -105,12 +105,12 @@ fun BatchDownloadWarningDialog(
                 AnimatedVisibility(visible = advancedExpanded) {
                     Column {
                         SwitchItem(
-                            label = stringResource(R.string.skip_previously_failed),
-                            description = stringResource(R.string.skip_previously_failed_desc),
-                            selected = skipPreviouslyFailed,
+                            label = stringResource(R.string.skip_no_lyrics),
+                            description = stringResource(R.string.skip_no_lyrics_desc),
+                            selected = skipNoLyrics,
                             modifier = Modifier,
                             innerPaddingValues = rowPadding,
-                        ) { onSkipPreviouslyFailedChangeRequest(!skipPreviouslyFailed) }
+                        ) { onSkipNoLyricsChangeRequest(!skipNoLyrics) }
 
                         SwitchItem(
                             label = stringResource(R.string.embed_lyrics_in_file),

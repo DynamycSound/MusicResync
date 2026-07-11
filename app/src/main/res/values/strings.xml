@@ -8,8 +8,8 @@
     <string name="correct_metadata_desc">Fix wrong title and artist tags on confident matches</string>
     <string name="skip_existing_lyrics">Skip songs that already have lyrics</string>
     <string name="skip_existing_lyrics_desc">Songs with synced lyrics are left untouched</string>
-    <string name="skip_previously_failed">Skip previously failed songs</string>
-    <string name="skip_previously_failed_desc">Songs that failed before are left out of this run</string>
+    <string name="skip_no_lyrics">Skip songs with no lyrics</string>
+    <string name="skip_no_lyrics_desc">Songs a previous run searched and found no lyrics for are left out. Songs that errored are still retried.</string>
     <string name="save_lrc_next_to_song">Save .lrc file next to song</string>
     <string name="save_lrc_desc">Recommended. Works with Samsung Music and most players</string>
     <string name="embed_lyrics_desc">Write the lyrics inside the song file itself</string>
