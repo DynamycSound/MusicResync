@@ -120,9 +120,11 @@ class LyricsFetchViewModel(
                 val candidates = FilenameParser.candidates(querySongName, queryArtistName, source?.filePath)
                     .ifEmpty { listOf(QueryCandidate(querySongName, queryArtistName ?: "", MatchStrategy.TAGS)) }
 
-                // Selected provider first, then the rest as automatic fallback.
+                // Selected provider first, then the user's configured fallback chain (Settings > Provider order).
+                // Providers the user disabled are not queried automatically (they stay available via the
+                // per-provider dropdown/retry).
                 val order = (listOf(userSettingsController.selectedProvider) +
-                        Providers.entries.filter { it != userSettingsController.selectedProvider }).distinct()
+                        userSettingsController.enabledProviderOrder).distinct()
 
                 // Track which providers the search actually reached. The ladder can stop early (auto-accept), so
                 // the rest are genuinely UNTRIED — not failures — and must not be painted with a red X.

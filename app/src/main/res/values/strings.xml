@@ -17,7 +17,7 @@
     <string name="all_songs_have_lyrics">All songs already have lyrics. Turn off \"Skip existing\" to re-fetch.</string>
     <string name="advanced">Advanced</string>
     <string name="auto_try_providers">Try every provider</string>
-    <string name="auto_try_providers_desc">Slower but finds more. Turn off for a quick LRCLib-only pass</string>
+    <string name="auto_try_providers_desc">Slower but finds more. Turn off to only query the first provider in your provider order</string>
     <string name="private_lrc_note">Snaptube downloads: matching \"_private\" .lrc files are renamed automatically so players can see them.</string>
     <string name="confidence_verify">Please verify</string>
     <string name="searching">Searching…</string>
@@ -281,4 +281,25 @@
     <string name="spotify_secrets_stale">May be outdated · refreshed %1$s ago. Spotify search may fail.</string>
     <string name="spotify_secrets_refresh">Refresh</string>
     <string name="spotify_secrets_refreshing">Refreshing…</string>
+
+    <!-- Provider fallback order (Settings) -->
+    <string name="provider_order">Provider order</string>
+    <string name="provider_order_desc">Providers are tried one by one, from top to bottom, until lyrics are found. Uncheck a provider to skip it.</string>
+    <string name="provider_word_by_word">Word-by-word lyrics</string>
+    <string name="move_up">Move up</string>
+    <string name="move_down">Move down</string>
+
+    <!-- Full-screen batch download options -->
+    <string name="batch_options_title">Batch download</string>
+    <string name="batch_options_general">Options</string>
+    <string name="batch_options_advanced">Advanced</string>
+    <string name="start">Start</string>
+
+    <!-- Batch result category sheet -->
+    <string name="batch_category_synced_title">Synced lyrics</string>
+    <string name="batch_category_unsynced_title">Unsynced lyrics</string>
+    <string name="batch_category_not_found_title">No lyrics found</string>
+    <string name="batch_category_failed_title">Failed</string>
+    <string name="batch_category_skipped_title">Skipped</string>
+    <string name="batch_category_empty">Nothing here yet</string>
 </resources>

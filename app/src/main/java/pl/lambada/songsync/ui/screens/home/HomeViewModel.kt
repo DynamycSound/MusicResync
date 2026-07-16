@@ -30,6 +30,7 @@ import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.domain.model.SortOrders
 import pl.lambada.songsync.domain.model.SortValues
+import pl.lambada.songsync.util.EmbeddedLyrics
 import pl.lambada.songsync.util.batch.BatchDownloadController
 import pl.lambada.songsync.util.cache.SongCache
 import pl.lambada.songsync.util.matching.LrcPrescan
@@ -238,11 +239,14 @@ class HomeViewModel(
         val songs = cachedSongs ?: return null
         val job = viewModelScope.launch(Dispatchers.IO) {
             try {
-                val results = LrcPrescan.scan(songs.mapNotNull { it.filePath })
+                // Sidecar .lrc first, then lyrics embedded in the audio tags (issue #5): embedded-only songs
+                // used to show as "missing lyrics" because only sibling files were checked.
+                val results = LrcPrescan.scan(songs.mapNotNull { it.filePath }, EmbeddedLyrics::read)
                 val states = results.mapValues { (_, r) ->
                     when (r) {
-                        PrescanResult.ALREADY_SYNCED, PrescanResult.RENAMED_FROM_PRIVATE -> LyricState.HAS_LYRICS
-                        PrescanResult.ALREADY_PRESENT_UNSYNCED -> LyricState.UNSYNCED
+                        PrescanResult.ALREADY_SYNCED, PrescanResult.RENAMED_FROM_PRIVATE,
+                        PrescanResult.EMBEDDED_SYNCED -> LyricState.HAS_LYRICS
+                        PrescanResult.ALREADY_PRESENT_UNSYNCED, PrescanResult.EMBEDDED_UNSYNCED -> LyricState.UNSYNCED
                         PrescanResult.NONE -> LyricState.NO_LYRICS
                     }
                 }

@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import pl.lambada.songsync.domain.model.SortOrders
 import pl.lambada.songsync.domain.model.SortValues
 import pl.lambada.songsync.util.Providers
+import pl.lambada.songsync.util.defaultProviderFallbackOrder
 import pl.lambada.songsync.util.set
 
 /**
@@ -22,6 +23,23 @@ import pl.lambada.songsync.util.set
  */
 internal fun parseBlacklistedFolders(raw: String): List<String> =
     raw.split(",").filter { it.isNotBlank() }
+
+/**
+ * Parses the persisted provider fallback order (comma-joined enum names) back into a full provider list.
+ * Robust against renames/removals (unknown names are dropped) and additions (providers missing from the stored
+ * value — e.g. ones added in an update — are appended in default-order position). Pure + internal so it's
+ * unit-testable without a DataStore.
+ */
+internal fun parseProviderOrder(raw: String): List<Providers> {
+    val stored = raw.split(",").mapNotNull { name ->
+        Providers.entries.find { it.name == name.trim() }
+    }.distinct()
+    return stored + defaultProviderFallbackOrder.filter { it !in stored }
+}
+
+/** Parses the persisted disabled-provider set (comma-joined enum names), dropping unknown names. */
+internal fun parseDisabledProviders(raw: String): Set<Providers> =
+    raw.split(",").mapNotNull { name -> Providers.entries.find { it.name == name.trim() } }.toSet()
 
 class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     // Read the ENTIRE preferences snapshot once at construction (a single blocking read) instead of one
@@ -50,6 +68,18 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         parseBlacklistedFolders(prefs[blacklistedFoldersKey] ?: "")
     )
         private set
+
+    // Provider fallback chain (issue #6): the full, user-arrangeable order providers are tried in, plus the set
+    // the user switched off. The effective chain is [enabledProviderOrder].
+    var providerOrder by mutableStateOf(parseProviderOrder(prefs[providerOrderKey] ?: ""))
+        private set
+
+    var disabledProviders by mutableStateOf(parseDisabledProviders(prefs[disabledProvidersKey] ?: ""))
+        private set
+
+    /** The providers actually tried, in the user's order. Never empty: falls back to LRCLib if all are off. */
+    val enabledProviderOrder: List<Providers>
+        get() = providerOrder.filterNot { it in disabledProviders }.ifEmpty { listOf(Providers.LRCLIB) }
 
     var hideLyrics by mutableStateOf(prefs[hideLyricsKey] ?: false)
         private set
@@ -134,6 +164,17 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     fun updateBlacklistedFolders(to: List<String>) {
         dataStore.set(blacklistedFoldersKey, to.joinToString(","))
         blacklistedFolders = to
+    }
+
+    fun updateProviderOrder(to: List<Providers>) {
+        dataStore.set(providerOrderKey, to.joinToString(",") { it.name })
+        providerOrder = to
+    }
+
+    fun updateProviderEnabled(provider: Providers, enabled: Boolean) {
+        val to = if (enabled) disabledProviders - provider else disabledProviders + provider
+        dataStore.set(disabledProvidersKey, to.joinToString(",") { it.name })
+        disabledProviders = to
     }
 
     fun updateHideLyrics(to: Boolean) {
@@ -231,6 +272,8 @@ private val embedKey = booleanPreferencesKey("embed_lyrics")
 private val passedInitKey = booleanPreferencesKey("passed_init")
 private val selectedProviderKey = stringPreferencesKey("provider")
 private val blacklistedFoldersKey = stringPreferencesKey("blacklist")
+private val providerOrderKey = stringPreferencesKey("provider_fallback_order")
+private val disabledProvidersKey = stringPreferencesKey("disabled_providers")
 private val hideLyricsKey = booleanPreferencesKey("hide_lyrics")
 private val includeTranslationKey = booleanPreferencesKey("include_translation")
 private val includeRomanizationKey = booleanPreferencesKey("include_romanization")

@@ -194,6 +194,8 @@ fun embedLyricsInFile(
             propertyMap = metadata.propertyMap.apply { put("LYRICS", arrayOf(lyrics.toCrlf())) }
         )
 
+        // The embedded-lyrics scan memoises per file; the tags just changed, so force a fresh read next time.
+        EmbeddedLyrics.invalidate(filePath)
         true
     } catch (securityException: SecurityException) {
         handleSecurityException(securityException, securityExceptionHandler)
@@ -268,10 +270,27 @@ fun handleSecurityException(
 enum class Providers(val displayName: String, val hasWordByWord: Boolean) {
     APPLE("Apple Music", true),
     LRCLIB("LRCLib", false),
+    LYRICSPLUS("LyricsPlus", true),
+    BETTERLYRICS("BetterLyrics", true),
     SPOTIFY("Spotify", false),
     QQMUSIC("QQ Music", true),
     NETEASE("Netease", false) { val inf = 0 },
 }
+
+/**
+ * Default provider fallback chain (issue #6): the order providers are tried in until one has a match, unless
+ * the user rearranges it in Settings. LRCLib first (fast, no auth), then the word-by-word direct providers,
+ * then the searchable catalogues.
+ */
+val defaultProviderFallbackOrder: List<Providers> = listOf(
+    Providers.LRCLIB,
+    Providers.LYRICSPLUS,
+    Providers.BETTERLYRICS,
+    Providers.NETEASE,
+    Providers.APPLE,
+    Providers.SPOTIFY,
+    Providers.QQMUSIC,
+)
 
 /**
  * A plain (unsynced) lyrics hit that was found during the batch but NOT saved because the unsynced fallback
@@ -311,12 +330,11 @@ suspend fun downloadLyrics(
     var skippedCount = 0   // already had synced lyrics and skipExisting was on — NOT a download
     var consecutiveFailures = 0
 
-    // Auto-try ON: fall through every provider (same reach as the single-song search), so a song that only has
-    // synced lyrics on, say, Apple or Netease is still found in batch. OFF: LRCLib only (fastest).
+    // Auto-try ON: walk the user's provider chain (Settings > Provider order) one by one until a match is found
+    // (issue #6), so a song that only has synced lyrics on, say, Apple or LyricsPlus is still found in batch.
+    // OFF: only the first provider of the chain (fastest).
     val matcher = SmartLyricsMatcher(providerService = LyricsProviderService())
-    val defaultProviders = listOf(Providers.LRCLIB, Providers.NETEASE, Providers.APPLE, Providers.SPOTIFY, Providers.QQMUSIC)
-    var lastSuccessfulProvider: Providers? = null
-    val providerSuccessCount = linkedMapOf<Providers, Int>().apply { defaultProviders.forEach { put(it, 0) } }
+    val configuredProviders = settings.enabledProviderOrder
 
     songs.forEach { song ->
         // Stop promptly when the user presses Stop: the batch coroutine is cancelled and this throws
@@ -325,10 +343,13 @@ suspend fun downloadLyrics(
 
         onSongStarted(song)
 
-        // skipExisting only skips songs that already have *synced* lyrics. A plain (unsynced) .lrc is treated
-        // as missing -- we fetch a synced version and overwrite it -- so "Has Lyrics" never lies.
+        // skipExisting only skips songs that already have *synced* lyrics — from a sidecar .lrc OR embedded in
+        // the file's tags (issue #5). A plain (unsynced) body is treated as missing -- we fetch a synced version
+        // and overwrite it -- so "Has Lyrics" never lies.
         val existingLrc = song.filePath.toLrcFile()
-        val hasSynced = existingLrc?.exists() == true && LrcPrescan.isSyncedLrc(existingLrc)
+        val hasSynced = (existingLrc?.exists() == true && LrcPrescan.isSyncedLrc(existingLrc)) ||
+            (song.filePath != null && EmbeddedLyrics.read(song.filePath)
+                ?.let { LrcPrescan.isSyncedContent(it) } == true)
         if (skipExisting && hasSynced) {
             onSongResult(song, SongMatchInfo(LyricState.HAS_LYRICS))
             // Already-synced songs are skipped, not downloaded — count them separately so the summary doesn't
@@ -338,20 +359,9 @@ suspend fun downloadLyrics(
             return@forEach
         }
 
-        // Provider order adapts during the batch: try the last successful provider first, then the providers that
-        // have found the most songs so far, then the remaining defaults. This keeps the batch on the currently
-        // "hot" provider instead of restarting from LRCLib/Netease every single time.
-        val providerOrder = if (!autoTryProviders) {
-            listOf(Providers.LRCLIB)
-        } else {
-            buildList {
-                lastSuccessfulProvider?.let { add(it) }
-                defaultProviders
-                    .sortedWith(compareByDescending<Providers> { providerSuccessCount[it] ?: 0 }
-                        .thenBy { defaultProviders.indexOf(it) })
-                    .forEach { if (it !in this) add(it) }
-            }
-        }
+        // The chain is tried strictly in the user's configured order (issue #6) — no adaptive reshuffling, so
+        // the behaviour always matches what Settings shows.
+        val providerOrder = if (!autoTryProviders) listOf(configuredProviders.first()) else configuredProviders
         val songConfig = MatchConfig(providerOrder = providerOrder)
 
         // Always overwrite once we've decided to process: replaces a stale/plain .lrc with the synced result.
@@ -368,11 +378,6 @@ suspend fun downloadLyrics(
                 if (consecutiveFailures >= 5) rateLimited = true
             }
             LyricState.FETCHING -> { /* not a terminal state */ }
-        }
-
-        if (info.provider != null && info.state in listOf(LyricState.SYNCED, LyricState.REVIEW, LyricState.UNSYNCED, LyricState.HAS_LYRICS)) {
-            lastSuccessfulProvider = info.provider
-            providerSuccessCount[info.provider] = (providerSuccessCount[info.provider] ?: 0) + 1
         }
 
         onSongResult(song, info)

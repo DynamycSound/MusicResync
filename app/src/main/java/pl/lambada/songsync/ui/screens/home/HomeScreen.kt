@@ -54,7 +54,6 @@ import pl.lambada.songsync.R
 import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.ui.LyricsFetchScreen
 import pl.lambada.songsync.ui.ScreenSettings
-import pl.lambada.songsync.ui.screens.home.components.BatchDownloadLyrics
 import pl.lambada.songsync.ui.screens.home.components.FilterAndSongCount
 import pl.lambada.songsync.ui.screens.home.components.FiltersDialog
 import pl.lambada.songsync.ui.screens.home.components.HomeAppBar
@@ -81,7 +80,6 @@ fun HomeScreen(
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    var isBatchDownload by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     // ensureSongsLoaded (not a raw reload): this effect re-fires every time Home re-enters composition (back
@@ -125,7 +123,8 @@ fun HomeScreen(
                     onSelectedClearAction = viewModel.selectedSongs::clear,
                     onNavigateToSettingsSectionRequest = { navController.navigate(ScreenSettings) },
                     onProviderSelectRequest = viewModel.userSettingsController::updateSelectedProviders,
-                    onBatchDownloadRequest = { isBatchDownload = true },
+                    // The batch setup is a full page now (like the progress view), not a popup.
+                    onBatchDownloadRequest = { navController.navigate(pl.lambada.songsync.ui.ScreenBatchOptions) },
                     selectedProvider = viewModel.userSettingsController.selectedProvider,
                     onSelectAllSongsRequest = viewModel::selectAllDisplayingSongs,
                     onInvertSongSelectionRequest = viewModel::invertSongSelection,
@@ -146,8 +145,6 @@ fun HomeScreen(
                     viewModel = viewModel,
                     selected = viewModel.selectedSongs,
                     scaffoldPadding = paddingValues,
-                    isBatchDownload = isBatchDownload,
-                    onBatchDownloadState = { onBatchDownload -> isBatchDownload = onBatchDownload },
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope
                 )
@@ -181,22 +178,12 @@ fun HomeScreenLoaded(
     navController: NavHostController,
     viewModel: HomeViewModel,
     scaffoldPadding: PaddingValues,
-    isBatchDownload: Boolean,
-    onBatchDownloadState: (isBatchDownload: Boolean) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val refreshState = rememberPullToRefreshState()
-
-    if (isBatchDownload) {
-        BatchDownloadLyrics(
-            viewModel = viewModel,
-            onDone = { onBatchDownloadState(false) },
-            onNavigateToProgress = { navController.navigate(pl.lambada.songsync.ui.ScreenBatchProgress) },
-        )
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
     PullToRefreshBox(
@@ -376,7 +363,7 @@ fun HomeScreenLoaded(
             ExtendedFloatingActionButton(
                 onClick = {
                     if (batchRunning) navController.navigate(pl.lambada.songsync.ui.ScreenBatchProgress)
-                    else onBatchDownloadState(true)
+                    else navController.navigate(pl.lambada.songsync.ui.ScreenBatchOptions)
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)

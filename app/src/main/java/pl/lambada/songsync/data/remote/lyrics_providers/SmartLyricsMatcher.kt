@@ -2,8 +2,10 @@ package pl.lambada.songsync.data.remote.lyrics_providers
 
 import android.util.Log
 import kotlinx.coroutines.delay
+import pl.lambada.songsync.data.remote.lyrics_providers.others.BetterLyricsAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LastResortAPI
+import pl.lambada.songsync.data.remote.lyrics_providers.others.LyricsPlusAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.NeteaseAPI
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.util.Providers
@@ -56,6 +58,9 @@ class SmartLyricsMatcher(
     private val providerService: LyricsProviderService? = null,
     /** Internal "last resort" canonicalizer (iTunes/Deezer) — not a user-facing provider. */
     private val lastResortApi: LastResortAPI = LastResortAPI(),
+    /** Direct-fetch providers (no search endpoint): word-by-word/TTML sources added for issue #4. */
+    private val lyricsPlus: LyricsPlusAPI = LyricsPlusAPI(),
+    private val betterLyrics: BetterLyricsAPI = BetterLyricsAPI(),
 ) {
 
     /**
@@ -84,6 +89,7 @@ class SmartLyricsMatcher(
                 val found = when (provider) {
                     Providers.LRCLIB -> searchLrcLib(query, local, cand, config, log)
                     Providers.NETEASE -> searchNetease(query, local, cand, config, log)
+                    Providers.LYRICSPLUS, Providers.BETTERLYRICS -> searchDirect(provider, local, cand, config, log)
                     else -> searchGeneric(provider, local, cand, config, log)
                 }
 
@@ -229,6 +235,45 @@ class SmartLyricsMatcher(
             }
             else -> hit.inlineLyrics // LRCLib + generic providers carry the lyrics inline
         }?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Direct-fetch path for LyricsPlus/BetterLyrics: these services take title/artist(/duration/album) and do
+     * their own matching server-side, returning lyrics or nothing — there are no search results to score. The
+     * returned hit therefore echoes the candidate we asked for; because that makes a perfect score
+     * self-fulfilling, the hit is only allowed to AUTO_ACCEPT when the local duration was sent along (the
+     * service verified the length) — otherwise it is capped at REVIEW like other unverifiable matches.
+     */
+    private suspend fun searchDirect(
+        provider: Providers, local: LocalTrack, cand: QueryCandidate, config: MatchConfig, log: (String) -> Unit
+    ): List<ScoredHit> {
+        val artist = cand.artist?.takeIf { it.isNotBlank() } ?: local.artist ?: return emptyList()
+        val durationSec = local.durationSec?.toInt()?.takeIf { it > 0 }
+
+        val lyrics = runCatching {
+            withRetry(config.maxRetries, onRetry = { a, d, e ->
+                log("  [${provider.displayName}] retry $a in ${d}ms (${e.message})")
+            }) {
+                when (provider) {
+                    Providers.LYRICSPLUS -> lyricsPlus.getSyncedLyrics(cand.title, artist, durationSec, local.album)
+                    else -> betterLyrics.getSyncedLyrics(cand.title, artist, durationSec, local.album)
+                }
+            }
+        }.onFailure { log("  [${provider.displayName}] failed: ${it.message}") }.getOrNull()
+        if (lyrics.isNullOrBlank()) return emptyList()
+
+        val pr = ProviderResult(
+            title = cand.title,
+            artist = artist,
+            durationSec = if (durationSec != null) local.durationSec else null,
+            album = local.album,
+            hasSyncedLyrics = true,
+        )
+        var conf = scoreFor(local, pr, cand.strategy)
+        if (durationSec == null && conf.tier == MatchTier.AUTO_ACCEPT) {
+            conf = conf.copy(score = 0.80, tier = MatchTier.REVIEW)
+        }
+        return listOf(ScoredHit(provider, cand.strategy, pr, conf, lyrics, null))
     }
 
     /**

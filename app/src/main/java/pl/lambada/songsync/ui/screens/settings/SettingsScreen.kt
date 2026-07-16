@@ -28,6 +28,7 @@ import pl.lambada.songsync.ui.screens.settings.components.CreditsSection
 import pl.lambada.songsync.ui.screens.settings.components.ExternalLinkSection
 import pl.lambada.songsync.ui.screens.settings.components.MarqueeSwitch
 import pl.lambada.songsync.ui.screens.settings.components.MultiPersonSwitch
+import pl.lambada.songsync.ui.screens.settings.components.ProviderOrderSection
 import pl.lambada.songsync.ui.screens.settings.components.PureBlackThemeSwitch
 import pl.lambada.songsync.ui.screens.settings.components.RomanizationSwitch
 import pl.lambada.songsync.ui.screens.settings.components.SdCardPathSetting
@@ -104,6 +105,27 @@ fun SettingsScreen(
                 )
             }
             item { SpotifySecretsStatus() }
+
+            item { SettingsHeadLabel(label = stringResource(id = R.string.provider_order)) }
+            item {
+                ProviderOrderSection(
+                    order = userSettingsController.providerOrder,
+                    disabled = userSettingsController.disabledProviders,
+                    onMove = { provider, delta ->
+                        val current = userSettingsController.providerOrder.toMutableList()
+                        val from = current.indexOf(provider)
+                        val to = from + delta
+                        if (from != -1 && to in current.indices) {
+                            current.removeAt(from)
+                            current.add(to, provider)
+                            userSettingsController.updateProviderOrder(current)
+                        }
+                    },
+                    onToggle = { provider, enabled ->
+                        userSettingsController.updateProviderEnabled(provider, enabled)
+                    },
+                )
+            }
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                 item { SettingsHeadLabel(label = stringResource(R.string.sd_card)) }

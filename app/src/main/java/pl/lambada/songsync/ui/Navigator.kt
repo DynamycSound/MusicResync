@@ -4,6 +4,7 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -12,6 +13,7 @@ import kotlinx.serialization.Serializable
 import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
 import pl.lambada.songsync.ui.common.animatedComposable
+import pl.lambada.songsync.ui.screens.batch.BatchOptionsScreen
 import pl.lambada.songsync.ui.screens.batch.BatchProgressScreen
 import pl.lambada.songsync.ui.screens.home.HomeScreen
 import pl.lambada.songsync.util.batch.BatchDownloadController
@@ -83,6 +85,23 @@ fun Navigator(
                     animatedVisibilityScope = this,
                 )
             }
+            animatedComposable<ScreenBatchOptions> { entry ->
+                // The options page operates on the Home screen's selection/filter state, so it reuses the
+                // HomeViewModel scoped to the Home back-stack entry instead of creating its own.
+                val homeEntry = remember(entry) { navController.getBackStackEntry(ScreenHome) }
+                BatchOptionsScreen(
+                    viewModel = viewModel(viewModelStoreOwner = homeEntry) {
+                        HomeViewModel(userSettingsController, lyricsProviderService)
+                    },
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToProgress = {
+                        // Replace the options page with the progress view, so Back from progress returns Home.
+                        navController.navigate(ScreenBatchProgress) {
+                            popUpTo<ScreenHome>()
+                        }
+                    },
+                )
+            }
             animatedComposable<ScreenBatchProgress> {
                 BatchProgressScreen(onNavigateBack = { navController.popBackStack() })
             }
@@ -150,6 +169,9 @@ data class LocalSong(
 
 @Serializable
 object ScreenSettings
+
+@Serializable
+object ScreenBatchOptions
 
 @Serializable
 object ScreenBatchProgress
