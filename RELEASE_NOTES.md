@@ -1,10 +1,18 @@
-## MusicResync v1.5.3
+## MusicResync v1.6.0
 
-### New
-- Completion notification: when a batch download finishes (or stops early from rate limiting), you now get a notification with the full breakdown: synced lyrics, plain lyrics, songs with no lyrics found, errors, skipped songs, and how many plain lyrics are waiting behind "Add all". Tap it to jump straight to the results. It lives on its own "Batch results" channel, so you can tune or mute it separately from the quiet progress notification.
-- Time-left estimate: the ongoing progress notification now shows a rough "about N min left" once the run's pace is known.
-- The Done screen shows how long the whole run took ("Finished in 4 min 12 sec").
-- Opening the results screen clears the summary notification automatically, so nothing stale sits in the shade.
+### New lyrics providers
+- **LyricsPlus**: word-by-word synced lyrics from the community LyricsPlus service (6 mirrors tried in order, remembering the last one that worked).
+- **BetterLyrics**: Apple-style TTML lyrics, converted straight into word-by-word timing.
+- Both slot into the normal provider list and support the multi-person word-by-word format.
 
-### Hotfix
-- Fixed what the batch "skip" option targets. It is now "Skip songs with no lyrics" and it leaves out songs a previous run already searched and found nothing for, so a rerun stops asking the providers for songs that have nothing. Songs that errored out (network or write problems) are still retried, since those can work on a second try. On by default, and songs that were never tried yet always run. In 1.5.2 this skipped the errored songs and kept re-checking the empty ones, which was backwards.
+### Provider order, your way
+- New **Provider order** section in Settings: drag providers into the order you want them tried, and untick any you don't want queried at all. Both the single-song search and the batch download now walk that exact chain, one by one, until they find a match — instead of always falling back to a fixed order.
+
+### Fixed: lyrics embedded in the file weren't recognized
+- The home page's lyrics detector only checked for a sidecar `.lrc` file. Songs with lyrics embedded directly in their tags (via "Embed lyrics") were showing up as "missing lyrics" even though they weren't. The detector now reads embedded tags too, so those songs correctly show as having lyrics.
+
+### Batch download, cleaner
+- The batch download setup is now a full page instead of a cramped popup, with a clear "Start" button.
+- On the progress screen, the Synced / Unsynced / Not found / Failed counters are now tappable — each opens a drawer listing exactly which songs landed there. It opens at half the screen and slides up to full height.
+
+Install over your existing app — it's signed with the same key, so it upgrades in place.
