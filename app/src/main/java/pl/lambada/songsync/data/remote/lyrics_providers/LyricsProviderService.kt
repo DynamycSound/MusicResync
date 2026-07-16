@@ -2,8 +2,10 @@ package pl.lambada.songsync.data.remote.lyrics_providers
 
 import android.util.Log
 import pl.lambada.songsync.data.remote.lyrics_providers.apple.AppleAPI
+import pl.lambada.songsync.data.remote.lyrics_providers.others.BetterLyricsAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LastResortAPI
+import pl.lambada.songsync.data.remote.lyrics_providers.others.LyricsPlusAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.NeteaseAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.QQMusicAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.spotify.SpotifyAPI
@@ -69,6 +71,11 @@ class LyricsProviderService {
                 Providers.NETEASE -> NeteaseAPI().getSongInfo(query, offset) ?: throw NoTrackFoundException()
                 Providers.QQMUSIC -> QQMusicAPI().getSongInfo(query, offset) ?: throw NoTrackFoundException()
                 Providers.APPLE -> appleAPI.getSongInfo(query, offset) ?: throw NoTrackFoundException()
+                // Direct-fetch providers: no search endpoint, so there is nothing to paginate — the query itself
+                // is the lookup token and getSyncedLyrics performs the actual fetch.
+                Providers.LYRICSPLUS, Providers.BETTERLYRICS ->
+                    if (offset > 0) throw NoTrackFoundException()
+                    else SongInfo(songName = query.songName, artistName = query.artistName)
             }
         } catch (e: Exception) {
             when (e) {
@@ -218,6 +225,16 @@ class LyricsProviderService {
 
             Providers.APPLE -> appleAPI.getSyncedLyrics(
                 song.appleID ?: 0L, multiPersonWordByWord
+            )
+
+            Providers.LYRICSPLUS -> LyricsPlusAPI().getSyncedLyrics(
+                song.songName.orEmpty(), song.artistName.orEmpty(),
+                multiPersonWordByWord = multiPersonWordByWord,
+            )
+
+            Providers.BETTERLYRICS -> BetterLyricsAPI().getSyncedLyrics(
+                song.songName.orEmpty(), song.artistName.orEmpty(),
+                multiPersonWordByWord = multiPersonWordByWord,
             )
         }
     }

@@ -20,6 +20,12 @@ enum class PrescanResult {
      */
     ALREADY_PRESENT_UNSYNCED,
 
+    /** No sidecar `.lrc`, but the audio file itself carries SYNCED lyrics in its tags (USLT/LYRICS). */
+    EMBEDDED_SYNCED,
+
+    /** No sidecar `.lrc`, but the audio file carries plain (unsynced) lyrics in its tags. */
+    EMBEDDED_UNSYNCED,
+
     /** No usable sibling lyrics file was found. The song needs online fetching. */
     NONE
 }
@@ -57,6 +63,10 @@ object LrcPrescan {
         }.getOrDefault(false)
     }
 
+    /** Same synced-vs-plain call as [isSyncedLrc], but for an in-memory body (e.g. lyrics embedded in tags). */
+    fun isSyncedContent(lyrics: String): Boolean =
+        lyrics.lineSequence().take(200).any { timestampRegex.containsMatchIn(it) }
+
     /**
      * Ensures `<stem>.lrc` exists next to [audioPath] if any usable variant is present.
      * @return what was done (see [PrescanResult]).
@@ -69,6 +79,8 @@ object LrcPrescan {
     fun resolveForAudio(
         audioPath: String,
         dirCache: MutableMap<String, List<File>>? = null,
+        /** Optional tag reader (injected on Android, null in JVM tests): lyrics embedded in the audio file. */
+        embeddedLyricsReader: ((String) -> String?)? = null,
     ): PrescanResult {
         val audio = File(audioPath)
         val dir = audio.parentFile ?: return PrescanResult.NONE
@@ -77,10 +89,25 @@ object LrcPrescan {
 
         if (isSyncedLrc(target)) return PrescanResult.ALREADY_SYNCED
 
+        /**
+         * No usable sidecar found — fall back to lyrics embedded in the audio's own tags (issue #5: songs whose
+         * lyrics were embedded into the file used to show as "missing"). A synced embedded body outranks a plain
+         * sidecar, since the tabs and batch care about *synced* lyrics.
+         */
+        fun embeddedFallback(): PrescanResult {
+            val embedded = embeddedLyricsReader?.invoke(audioPath)
+            return when {
+                embedded != null && isSyncedContent(embedded) -> PrescanResult.EMBEDDED_SYNCED
+                target.exists() -> PrescanResult.ALREADY_PRESENT_UNSYNCED
+                !embedded.isNullOrBlank() -> PrescanResult.EMBEDDED_UNSYNCED
+                else -> PrescanResult.NONE
+            }
+        }
+
         val candidates = collectPrivateVariants(dir, stem, dirCache)
         // Prefer a candidate that is actually synced; fall back to the first that exists.
         val best = candidates.firstOrNull { isSyncedLrc(it) } ?: candidates.firstOrNull()
-            ?: return if (target.exists()) PrescanResult.ALREADY_PRESENT_UNSYNCED else PrescanResult.NONE
+            ?: return embeddedFallback()
 
         // Replace a stale/empty target if present, then move the private file into place.
         if (target.exists()) target.delete()
@@ -88,7 +115,7 @@ object LrcPrescan {
             best.copyTo(target, overwrite = true); best.delete(); true
         }.getOrDefault(false)
 
-        if (!moved) return PrescanResult.NONE
+        if (!moved) return embeddedFallback()
         // Re-check the renamed target: a `_private` file can be plain (unsynced). Only report it as a synced
         // rescue when it actually carries timestamps; otherwise it's an unsynced lyrics file and must NOT be
         // coloured green as if it had synced lyrics.
@@ -124,8 +151,12 @@ object LrcPrescan {
      * Runs [resolveForAudio] for every path. Returns a map of audioPath -> result so callers can
      * count how many songs gained lyrics without any network request.
      */
-    fun scan(audioPaths: List<String>): Map<String, PrescanResult> {
+    @JvmOverloads
+    fun scan(
+        audioPaths: List<String>,
+        embeddedLyricsReader: ((String) -> String?)? = null,
+    ): Map<String, PrescanResult> {
         val dirCache = HashMap<String, List<File>>()
-        return audioPaths.associateWith { resolveForAudio(it, dirCache) }
+        return audioPaths.associateWith { resolveForAudio(it, dirCache, embeddedLyricsReader) }
     }
 }

@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -52,6 +53,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -127,6 +129,7 @@ fun BatchProgressScreen(onNavigateBack: () -> Unit) {
 
     var showKeepAliveDialog by remember { mutableStateOf(false) }
     var lyricsSheetSong by remember { mutableStateOf<Song?>(null) }
+    var categorySheet by remember { mutableStateOf<ResultCategory?>(null) }
 
     // The user is looking at the results now; the summary notification has served its purpose.
     LaunchedEffect(controller.status) {
@@ -202,7 +205,7 @@ fun BatchProgressScreen(onNavigateBack: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
-            CountersGrid(controller)
+            CountersGrid(controller, onCategoryClick = { categorySheet = it })
 
             // Unsynced lyrics found for songs with no synced match. One tap adds all of them
             // (and keeps auto-adding new ones for the rest of the run).
@@ -313,6 +316,157 @@ fun BatchProgressScreen(onNavigateBack: () -> Unit) {
 
     lyricsSheetSong?.let { song ->
         LyricsPreviewSheet(song = song, onDismiss = { lyricsSheetSong = null })
+    }
+
+    categorySheet?.let { category ->
+        ResultCategorySheet(
+            category = category,
+            controller = controller,
+            onDismiss = { categorySheet = null },
+            onSongClick = { song -> lyricsSheetSong = song },
+        )
+    }
+}
+
+/** The tappable result buckets on the progress screen. Each opens a drawer listing the affected songs. */
+enum class ResultCategory(val titleRes: Int) {
+    SYNCED(R.string.batch_category_synced_title),
+    UNSYNCED(R.string.batch_category_unsynced_title),
+    NOT_FOUND(R.string.batch_category_not_found_title),
+    FAILED(R.string.batch_category_failed_title);
+
+    fun matches(state: LyricState): Boolean = when (this) {
+        SYNCED -> state == LyricState.SYNCED || state == LyricState.REVIEW
+        UNSYNCED -> state == LyricState.UNSYNCED
+        NOT_FOUND -> state == LyricState.NO_LYRICS
+        FAILED -> state == LyricState.FAILED
+    }
+}
+
+/**
+ * Drawer listing every song that landed in a result bucket. Opens at half the screen and can be dragged up
+ * to full height (or down to dismiss). Tapping a song that has lyrics opens the lyrics preview.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ResultCategorySheet(
+    category: ResultCategory,
+    controller: BatchDownloadController,
+    onDismiss: () -> Unit,
+    onSongClick: (Song) -> Unit,
+) {
+    // skipPartiallyExpanded = false => the sheet rests at ~half screen first and expands to full when dragged.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val entries = controller.processed.filter { category.matches(it.info.state) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(category.titleRes),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = entries.size.toString(),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+
+            if (entries.isEmpty()) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.batch_category_empty),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(entries.size) { index ->
+                        val entry = entries[index]
+                        CategorySongRow(
+                            entry = entry,
+                            showLyricsHint = entry.info.hasLyrics || entry.info.state == LyricState.UNSYNCED,
+                            onClick = { onSongClick(entry.song) },
+                        )
+                    }
+                    item { Spacer(Modifier.height(24.dp)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategorySongRow(
+    entry: BatchDownloadController.ProcessedSong,
+    showLyricsHint: Boolean,
+    onClick: () -> Unit,
+) {
+    val song = entry.song
+    val painter = rememberAsyncImagePainter(
+        ImageRequest.Builder(LocalContext.current).data(song.imgUri).apply {
+            placeholder(R.drawable.ic_song)
+            error(R.drawable.ic_song)
+        }.build()
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(enabled = showLyricsHint, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            painter = painter,
+            contentDescription = stringResource(R.string.album_cover),
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(10.dp)),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = song.title ?: stringResource(R.string.unknown),
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val subtitleParts = listOfNotNull(
+                song.artist,
+                entry.info.provider?.displayName,
+            )
+            Text(
+                text = subtitleParts.joinToString(" · ").ifBlank { stringResource(R.string.unknown) },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (showLyricsHint) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = stringResource(R.string.tap_to_view_lyrics),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }
 
@@ -470,9 +624,10 @@ private fun SongPage(
     }
 }
 
-/** 2x2 grid of animated counters. Neutral M3 tones only, the label carries the meaning. */
+/** 2x2 grid of animated counters. Neutral M3 tones only, the label carries the meaning. Each tile opens a
+ *  drawer listing the songs in that bucket. */
 @Composable
-private fun CountersGrid(controller: BatchDownloadController) {
+private fun CountersGrid(controller: BatchDownloadController, onCategoryClick: (ResultCategory) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -485,11 +640,13 @@ private fun CountersGrid(controller: BatchDownloadController) {
                 value = controller.syncedCount,
                 emphasized = true,
                 modifier = Modifier.weight(1f),
+                onClick = { onCategoryClick(ResultCategory.SYNCED) },
             )
             CounterTile(
                 label = stringResource(R.string.batch_unsynced_label),
                 value = controller.unsyncedCount,
                 modifier = Modifier.weight(1f),
+                onClick = { onCategoryClick(ResultCategory.UNSYNCED) },
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -497,19 +654,28 @@ private fun CountersGrid(controller: BatchDownloadController) {
                 label = stringResource(R.string.batch_not_found_label),
                 value = controller.noLyricsCount,
                 modifier = Modifier.weight(1f),
+                onClick = { onCategoryClick(ResultCategory.NOT_FOUND) },
             )
             CounterTile(
                 label = stringResource(R.string.batch_failed_label),
                 value = controller.failedCount,
                 modifier = Modifier.weight(1f),
+                onClick = { onCategoryClick(ResultCategory.FAILED) },
             )
         }
     }
 }
 
 @Composable
-private fun CounterTile(label: String, value: Int, modifier: Modifier = Modifier, emphasized: Boolean = false) {
+private fun CounterTile(
+    label: String,
+    value: Int,
+    modifier: Modifier = Modifier,
+    emphasized: Boolean = false,
+    onClick: () -> Unit = {},
+) {
     Surface(
+        onClick = onClick,
         shape = RoundedCornerShape(20.dp),
         color = if (emphasized) MaterialTheme.colorScheme.primaryContainer
         else MaterialTheme.colorScheme.surfaceContainerHigh,
