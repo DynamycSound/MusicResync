@@ -1,7 +1,10 @@
 package pl.lambada.songsync.data.remote.lyrics_providers
 
 import android.util.Log
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import pl.lambada.songsync.data.remote.lyrics_providers.others.BetterLyricsAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LastResortAPI
@@ -38,6 +41,12 @@ data class MatchConfig(
     val maxRetries: Int = 3,
     val requestDelayMs: Long = 200,
     val maxCandidatesPerProvider: Int = 4,
+    /** Delay before the first retry of a failed request; doubles per attempt (500ms -> 1s -> 2s). */
+    val retryBaseDelayMs: Long = 500,
+    /** Hard wall-clock budget for ONE provider's whole candidate walk (search + retries). Issue #9: without
+     *  this, a single unresponsive provider could burn retries × timeouts × candidates before the next provider
+     *  even got a chance. */
+    val providerTimeoutMs: Long = 25_000,
 )
 
 /**
@@ -66,6 +75,15 @@ class SmartLyricsMatcher(
     /**
      * @return all scored hits, highest confidence first (may be empty). The first element, if any, is the best
      * match; inspect [ScoredHit.tier] to decide auto-accept / verify / manual.
+     *
+     * All providers are queried CONCURRENTLY (issue #9): the old strictly sequential ladder could stack
+     * 7 providers × retries × 20s network timeouts into a multi-minute wait before ever reaching the provider
+     * that actually had the lyrics. Requests to any single provider remain sequential with a polite delay, so
+     * per-provider rate limiting is unchanged — only the waiting overlaps. Each provider is additionally
+     * hard-bounded by [MatchConfig.providerTimeoutMs], so one hung host can never stall the whole search.
+     *
+     * [onSkipped] fires for providers whose in-flight search was cancelled by the early auto-accept stop —
+     * they were never really tried, so callers should not paint them as "no lyrics".
      */
     suspend fun search(
         local: LocalTrack,
@@ -73,47 +91,89 @@ class SmartLyricsMatcher(
         config: MatchConfig = MatchConfig(),
         log: (String) -> Unit = { Log.i(TAG, it) },
         onAttempt: (provider: Providers) -> Unit = {},
-    ): List<ScoredHit> {
+        onSkipped: (provider: Providers) -> Unit = {},
+    ): List<ScoredHit> = coroutineScope {
         val displayName = listOfNotNull(local.artist, local.title).joinToString(" - ").ifBlank { "<unknown>" }
-        log("[match] \"$displayName\"  dur=${local.durationSec?.let { "${it.toInt()}s" } ?: "?"}  candidates=${candidates.size}")
+        log("[match] \"$displayName\"  dur=${local.durationSec?.let { "${it.toInt()}s" } ?: "?"}  candidates=${candidates.size}  providers=${config.providerOrder.size} (parallel)")
 
+        val jobs = config.providerOrder.map { provider ->
+            onAttempt(provider)
+            async {
+                withTimeoutOrNull(config.providerTimeoutMs) {
+                    searchProvider(provider, local, candidates, config, log)
+                } ?: emptyList<ScoredHit>().also {
+                    log("  [${provider.displayName}] no answer within ${config.providerTimeoutMs / 1000}s — skipped")
+                }
+            }
+        }
+
+        // Collect in the user's configured priority order so the early-stop semantics match the old ladder:
+        // once the chain so far holds an auto-accept match, lower-priority providers still in flight are
+        // cancelled. Ones that already finished are merged anyway — free extra manual-search suggestions.
         val hits = LinkedHashMap<String, ScoredHit>() // dedupe by provider+normalized result
         var best = 0.0
-
-        outer@ for (provider in config.providerOrder) {
-            onAttempt(provider)
-            for (cand in candidates) {
-                val query = cand.asSearchString()
-                if (query.isBlank()) continue
-
-                val found = when (provider) {
-                    Providers.LRCLIB -> searchLrcLib(query, local, cand, config, log)
-                    Providers.NETEASE -> searchNetease(query, local, cand, config, log)
-                    Providers.LYRICSPLUS, Providers.BETTERLYRICS -> searchDirect(provider, local, cand, config, log)
-                    else -> searchGeneric(provider, local, cand, config, log)
+        var stopped = false
+        for ((index, deferred) in jobs.withIndex()) {
+            val provider = config.providerOrder[index]
+            if (stopped && !deferred.isCompleted) {
+                deferred.cancel()
+                onSkipped(provider)
+                continue
+            }
+            for (hit in deferred.await()) {
+                val key = "${hit.provider}|${hit.result.title}|${hit.result.artist}|${hit.result.durationSec}"
+                val existing = hits[key]
+                if (existing == null || hit.confidence.score > existing.confidence.score) hits[key] = hit
+                if (hit.confidence.score > best) {
+                    best = hit.confidence.score
+                    log("  [${provider.displayName}] ${hit.strategy.label} -> ${hit.result.title} - ${hit.result.artist} (${hit.confidence.percent()}%${if (hit.confidence.durationMatched) ", duration✓" else ""})")
                 }
-
-                for (hit in found) {
-                    val key = "${hit.provider}|${hit.result.title}|${hit.result.artist}|${hit.result.durationSec}"
-                    val existing = hits[key]
-                    if (existing == null || hit.confidence.score > existing.confidence.score) hits[key] = hit
-                    if (hit.confidence.score > best) {
-                        best = hit.confidence.score
-                        log("  [${provider.displayName}] ${cand.strategy.label} -> ${hit.result.title} - ${hit.result.artist} (${hit.confidence.percent()}%${if (hit.confidence.durationMatched) ", duration✓" else ""})")
-                    }
-                }
-
-                delay(config.requestDelayMs)
-                if (best >= ConfidenceScorer.AUTO_ACCEPT_THRESHOLD) {
-                    log("  [auto-accept] reached ${(best * 100).toInt()}% — stopping early")
-                    break@outer
-                }
+            }
+            if (!stopped && best >= ConfidenceScorer.AUTO_ACCEPT_THRESHOLD) {
+                log("  [auto-accept] reached ${(best * 100).toInt()}% — cancelling providers still in flight")
+                stopped = true
             }
         }
 
         val ranked = hits.values.sortedByDescending { it.confidence.score }
         if (ranked.isEmpty()) log("  [no match] nothing found across ${config.providerOrder.joinToString { it.displayName }}")
-        return ranked
+        ranked
+    }
+
+    /**
+     * One provider's full candidate walk. Within a provider the requests stay sequential and politely delayed
+     * (rate-limit friendly); stops as soon as this provider produced an auto-accept-grade hit — weaker
+     * candidates can't beat it.
+     */
+    private suspend fun searchProvider(
+        provider: Providers,
+        local: LocalTrack,
+        candidates: List<QueryCandidate>,
+        config: MatchConfig,
+        log: (String) -> Unit,
+    ): List<ScoredHit> {
+        val providerHits = LinkedHashMap<String, ScoredHit>()
+        var providerBest = 0.0
+        for (cand in candidates) {
+            val query = cand.asSearchString()
+            if (query.isBlank()) continue
+
+            val found = when (provider) {
+                Providers.LRCLIB -> searchLrcLib(query, local, cand, config, log)
+                Providers.NETEASE -> searchNetease(query, local, cand, config, log)
+                Providers.LYRICSPLUS, Providers.BETTERLYRICS -> searchDirect(provider, local, cand, config, log)
+                else -> searchGeneric(provider, local, cand, config, log)
+            }
+            for (hit in found) {
+                val key = "${hit.provider}|${hit.result.title}|${hit.result.artist}|${hit.result.durationSec}"
+                val existing = providerHits[key]
+                if (existing == null || hit.confidence.score > existing.confidence.score) providerHits[key] = hit
+                if (hit.confidence.score > providerBest) providerBest = hit.confidence.score
+            }
+            if (providerBest >= ConfidenceScorer.AUTO_ACCEPT_THRESHOLD) break
+            delay(config.requestDelayMs)
+        }
+        return providerHits.values.toList()
     }
 
     /** A best-effort PLAIN (unsynced) lyrics hit, used only when no provider has synced lyrics. */
@@ -129,12 +189,14 @@ class SmartLyricsMatcher(
         candidates: List<QueryCandidate>,
         config: MatchConfig = MatchConfig(),
         log: (String) -> Unit = { Log.i(TAG, it) },
-    ): PlainHit? {
+    ): PlainHit? = withTimeoutOrNull(config.providerTimeoutMs) {
+        // Same hard time budget as a regular provider (issue #9): this fallback runs after a failed search, so
+        // letting its retries stack would just re-create the long wait we removed.
         for (cand in candidates) {
             val query = cand.asSearchString()
             if (query.isBlank()) continue
             val results = runCatching {
-                withRetry(config.maxRetries) { lrcLib.searchCandidates(query) }
+                withRetry(config.maxRetries, config.retryBaseDelayMs) { lrcLib.searchCandidates(query) }
             }.onFailure { log("  [LRCLib/plain] search failed: ${it.message}") }.getOrDefault(emptyList())
 
             val best = results
@@ -148,11 +210,11 @@ class SmartLyricsMatcher(
 
             if (best != null) {
                 log("  [plain fallback] ${best.first.title} - ${best.first.artist} (${best.second.percent()}%)")
-                return PlainHit(Providers.LRCLIB, best.first, best.third)
+                return@withTimeoutOrNull PlainHit(Providers.LRCLIB, best.first, best.third)
             }
             delay(config.requestDelayMs)
         }
-        return null
+        null
     }
 
     /** A rescued result from the last-resort path: lyrics (synced or plain) under a canonical title/artist. */
@@ -188,32 +250,36 @@ class SmartLyricsMatcher(
         // first when duration was unknown) with no similarity check, so a wrong song by the same artist could be
         // rescued. selectBestRescue rescps each hit against the original local track via ConfidenceScorer.
         val rescue = ArrayList<RescueCandidate>()
-        for (query in queries) {
-            val metas = runCatching { lastResortApi.canonicalize(query) }
-                .onFailure { log("  [last-resort] canonicalize failed: ${it.message}") }
-                .getOrDefault(emptyList())
-            for (meta in metas) {
-                val results = runCatching { lrcLib.searchCandidates("${meta.artist} ${meta.title}") }
+        // Bounded like a regular provider (issue #9): the rescue only runs after everything already failed, so
+        // its canonicalize+re-query rounds must not stretch the total wait. On timeout we score what we got.
+        withTimeoutOrNull(config.providerTimeoutMs) {
+            for (query in queries) {
+                val metas = runCatching { lastResortApi.canonicalize(query) }
+                    .onFailure { log("  [last-resort] canonicalize failed: ${it.message}") }
                     .getOrDefault(emptyList())
-                results.forEach { r ->
-                    rescue.add(
-                        RescueCandidate(
-                            result = ProviderResult(
-                                title = r.trackName,
-                                artist = r.artistName,
-                                durationSec = r.duration,
-                                album = r.albumName,
-                                hasSyncedLyrics = !r.syncedLyrics.isNullOrBlank(),
-                            ),
-                            syncedLyrics = r.syncedLyrics,
-                            plainLyrics = r.plainLyrics,
-                            coverUrl = meta.coverUrl,
+                for (meta in metas) {
+                    val results = runCatching { lrcLib.searchCandidates("${meta.artist} ${meta.title}") }
+                        .getOrDefault(emptyList())
+                    results.forEach { r ->
+                        rescue.add(
+                            RescueCandidate(
+                                result = ProviderResult(
+                                    title = r.trackName,
+                                    artist = r.artistName,
+                                    durationSec = r.duration,
+                                    album = r.albumName,
+                                    hasSyncedLyrics = !r.syncedLyrics.isNullOrBlank(),
+                                ),
+                                syncedLyrics = r.syncedLyrics,
+                                plainLyrics = r.plainLyrics,
+                                coverUrl = meta.coverUrl,
+                            )
                         )
-                    )
+                    }
+                    delay(config.requestDelayMs)
                 }
-                delay(config.requestDelayMs)
             }
-        }
+        } ?: log("  [last-resort] time budget exhausted — scoring the ${rescue.size} candidates collected so far")
 
         val localViews = buildList {
             add(local)
@@ -229,7 +295,7 @@ class SmartLyricsMatcher(
     suspend fun fetchLyrics(hit: ScoredHit, config: MatchConfig = MatchConfig(), log: (String) -> Unit = { Log.i(TAG, it) }): String? {
         return when (hit.provider) {
             Providers.NETEASE -> hit.neteaseId?.let { id ->
-                runCatching { withRetry(config.maxRetries) { netease.getSyncedLyrics(id) } }
+                runCatching { withRetry(config.maxRetries, config.retryBaseDelayMs) { netease.getSyncedLyrics(id) } }
                     .onFailure { log("  [Netease] lyric fetch failed: ${it.message}") }
                     .getOrNull()
             }
@@ -251,7 +317,7 @@ class SmartLyricsMatcher(
         val durationSec = local.durationSec?.toInt()?.takeIf { it > 0 }
 
         val lyrics = runCatching {
-            withRetry(config.maxRetries, onRetry = { a, d, e ->
+            withRetry(config.maxRetries, config.retryBaseDelayMs, onRetry = { a, d, e ->
                 log("  [${provider.displayName}] retry $a in ${d}ms (${e.message})")
             }) {
                 when (provider) {
@@ -291,7 +357,7 @@ class SmartLyricsMatcher(
 
         for (offset in 0 until config.maxCandidatesPerProvider) {
             val info = runCatching {
-                withRetry(config.maxRetries, onRetry = { a, d, e ->
+                withRetry(config.maxRetries, config.retryBaseDelayMs, onRetry = { a, d, e ->
                     log("  [${provider.displayName}] retry $a in ${d}ms (${e.message})")
                 }) {
                     service.getSongInfo(SongInfo(cand.title, cand.artist), offset, provider)
@@ -303,7 +369,7 @@ class SmartLyricsMatcher(
             val pr = ProviderResult(info.songName, info.artistName, null, null, true)
             val conf = scoreFor(local, pr, cand.strategy)
             val lyrics = if (conf.score >= ConfidenceScorer.REVIEW_THRESHOLD) {
-                runCatching { withRetry(config.maxRetries) { service.getSyncedLyrics(info, provider) } }.getOrNull()
+                runCatching { withRetry(config.maxRetries, config.retryBaseDelayMs) { service.getSyncedLyrics(info, provider) } }.getOrNull()
             } else null
 
             val hit = ScoredHit(provider, cand.strategy, pr, conf, lyrics, null)
@@ -332,7 +398,7 @@ class SmartLyricsMatcher(
         query: String, local: LocalTrack, cand: QueryCandidate, config: MatchConfig, log: (String) -> Unit
     ): List<ScoredHit> {
         val results = runCatching {
-            withRetry(config.maxRetries, onRetry = { a, d, e -> log("  [LRCLib] retry $a in ${d}ms (${e.message})") }) {
+            withRetry(config.maxRetries, config.retryBaseDelayMs, onRetry = { a, d, e -> log("  [LRCLib] retry $a in ${d}ms (${e.message})") }) {
                 lrcLib.searchCandidates(query)
             }
         }.onFailure { log("  [LRCLib] search failed: ${it.message}") }.getOrDefault(emptyList())
@@ -354,7 +420,7 @@ class SmartLyricsMatcher(
         query: String, local: LocalTrack, cand: QueryCandidate, config: MatchConfig, log: (String) -> Unit
     ): List<ScoredHit> {
         val songs = runCatching {
-            withRetry(config.maxRetries, onRetry = { a, d, e -> log("  [Netease] retry $a in ${d}ms (${e.message})") }) {
+            withRetry(config.maxRetries, config.retryBaseDelayMs, onRetry = { a, d, e -> log("  [Netease] retry $a in ${d}ms (${e.message})") }) {
                 netease.searchCandidates(query, config.maxCandidatesPerProvider)
             }
         }.onFailure { log("  [Netease] search failed: ${it.message}") }.getOrDefault(emptyList())

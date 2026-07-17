@@ -1,18 +1,13 @@
-## MusicResync v1.6.0
+## MusicResync v1.6.1
 
-### New lyrics providers
-- **LyricsPlus**: word-by-word synced lyrics from the community LyricsPlus service (6 mirrors tried in order, remembering the last one that worked).
-- **BetterLyrics**: Apple-style TTML lyrics, converted straight into word-by-word timing.
-- Both slot into the normal provider list and support the multi-person word-by-word format.
+### Way faster lyrics search (fixes #9)
+Searching for lyrics could take **up to ~10 minutes** when a song was only available on a provider late in the chain (like QQ Music): every provider was tried one after another, each with its own retries and long network timeouts.
 
-### Provider order, your way
-- New **Provider order** section in Settings: drag providers into the order you want them tried, and untick any you don't want queried at all. Both the single-song search and the batch download now walk that exact chain, one by one, until they find a match — instead of always falling back to a fixed order.
+- **All providers are now queried at the same time.** The total wait is roughly the time of the fastest provider that has your lyrics — not the sum of every slow one before it.
+- **Per-provider time budget (25s).** A hung or unresponsive provider is skipped instead of stalling the whole search.
+- **Snappier retries.** Failed requests still retry with exponential backoff, just with shorter delays (0.5s → 1s → 2s).
+- **Tighter network timeouts** (12s per request, 6s connect) so a dead provider fails fast.
 
-### Fixed: lyrics embedded in the file weren't recognized
-- The home page's lyrics detector only checked for a sidecar `.lrc` file. Songs with lyrics embedded directly in their tags (via "Embed lyrics") were showing up as "missing lyrics" even though they weren't. The detector now reads embedded tags too, so those songs correctly show as having lyrics.
-
-### Batch download, cleaner
-- The batch download setup is now a full page instead of a cramped popup, with a clear "Start" button.
-- On the progress screen, the Synced / Unsynced / Not found / Failed counters are now tappable — each opens a drawer listing exactly which songs landed there. It opens at half the screen and slides up to full height.
+Your provider order from Settings still decides which match wins when several providers find the song, and requests to each individual provider remain sequential and politely delayed — so rate limits are respected exactly as before. Both the single-song search and the batch download benefit.
 
 Install over your existing app — it's signed with the same key, so it upgrades in place.
