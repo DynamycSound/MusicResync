@@ -435,7 +435,9 @@ suspend fun matchAndSaveSong(
     // song's provider list can later show "found / no match / not tried" per provider.
     val attempted = LinkedHashSet<Providers>()
 
-    val hits = runCatching { matcher.search(local, candidates, config, onAttempt = { attempted.add(it) }) }
+    val hits = runCatching {
+        matcher.search(local, candidates, config, onAttempt = { attempted.add(it) }, onSkipped = { attempted.remove(it) })
+    }
         .getOrElse {
             Log.e("MusicResync", "match failed for ${song.filePath}: ${it.message}")
             return SongMatchInfo(LyricState.FAILED, failedProviders = attempted.toList())

@@ -61,7 +61,8 @@ class LyricsFetchViewModel(
     /** The provider that actually produced the shown lyrics (may differ from the chosen one after fallback). */
     var activeProvider by mutableStateOf(userSettingsController.selectedProvider)
 
-    /** Live "which provider are we trying right now" status, shown while searching. */
+    /** Live provider status shown while searching. Providers are now queried in parallel, so this stays null
+     *  (the screen shows the generic "Searching…" label) rather than naming one provider misleadingly. */
     var searchStatus by mutableStateOf<Providers?>(null)
 
     /** Per-provider probe result for the cloud-icon dropdown: tried→HAS_SYNCED/NONE, or LOADING during a retry. */
@@ -126,12 +127,14 @@ class LyricsFetchViewModel(
                 val order = (listOf(userSettingsController.selectedProvider) +
                         userSettingsController.enabledProviderOrder).distinct()
 
-                // Track which providers the search actually reached. The ladder can stop early (auto-accept), so
-                // the rest are genuinely UNTRIED — not failures — and must not be painted with a red X.
+                // Track which providers the search actually reached. All providers now run in parallel, but the
+                // auto-accept early stop can still cancel slower ones mid-flight — those are genuinely UNTRIED,
+                // not failures, and must not be painted with a red X.
                 val attempted = linkedSetOf<Providers>()
                 val hits = matcher.search(
                     local, candidates, MatchConfig(providerOrder = order),
-                    onAttempt = { provider -> searchStatus = provider; attempted.add(provider); providerProbes[provider] = ProviderProbe.LOADING }
+                    onAttempt = { provider -> attempted.add(provider); providerProbes[provider] = ProviderProbe.LOADING },
+                    onSkipped = { provider -> attempted.remove(provider) },
                 )
                 searchStatus = null
 
