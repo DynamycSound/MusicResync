@@ -249,37 +249,43 @@ class SmartLyricsMatcher(
         // hand them to the scorer-based validator. The old code accepted the closest-duration hit (or just the
         // first when duration was unknown) with no similarity check, so a wrong song by the same artist could be
         // rescued. selectBestRescue rescps each hit against the original local track via ConfidenceScorer.
-        val rescue = ArrayList<RescueCandidate>()
-        // Bounded like a regular provider (issue #9): the rescue only runs after everything already failed, so
-        // its canonicalize+re-query rounds must not stretch the total wait. On timeout we score what we got.
-        withTimeoutOrNull(config.providerTimeoutMs) {
-            for (query in queries) {
-                val metas = runCatching { lastResortApi.canonicalize(query) }
-                    .onFailure { log("  [last-resort] canonicalize failed: ${it.message}") }
-                    .getOrDefault(emptyList())
-                for (meta in metas) {
-                    val results = runCatching { lrcLib.searchCandidates("${meta.artist} ${meta.title}") }
-                        .getOrDefault(emptyList())
-                    results.forEach { r ->
-                        rescue.add(
-                            RescueCandidate(
-                                result = ProviderResult(
-                                    title = r.trackName,
-                                    artist = r.artistName,
-                                    durationSec = r.duration,
-                                    album = r.albumName,
-                                    hasSyncedLyrics = !r.syncedLyrics.isNullOrBlank(),
-                                ),
-                                syncedLyrics = r.syncedLyrics,
-                                plainLyrics = r.plainLyrics,
-                                coverUrl = meta.coverUrl,
-                            )
-                        )
-                    }
-                    delay(config.requestDelayMs)
+        // Each cleaned query is rescued CONCURRENTLY (the same issue-#9 treatment as the main search) and each
+        // gets the regular per-provider time budget; on timeout its partial haul is still scored. The rescue
+        // only runs after everything already failed, so it must never stretch the total wait by minutes again.
+        val rescue = coroutineScope {
+            queries.map { query ->
+                async {
+                    val collected = ArrayList<RescueCandidate>()
+                    withTimeoutOrNull(config.providerTimeoutMs) {
+                        val metas = runCatching { lastResortApi.canonicalize(query) }
+                            .onFailure { log("  [last-resort] canonicalize failed: ${it.message}") }
+                            .getOrDefault(emptyList())
+                        for (meta in metas) {
+                            val results = runCatching { lrcLib.searchCandidates("${meta.artist} ${meta.title}") }
+                                .getOrDefault(emptyList())
+                            results.forEach { r ->
+                                collected.add(
+                                    RescueCandidate(
+                                        result = ProviderResult(
+                                            title = r.trackName,
+                                            artist = r.artistName,
+                                            durationSec = r.duration,
+                                            album = r.albumName,
+                                            hasSyncedLyrics = !r.syncedLyrics.isNullOrBlank(),
+                                        ),
+                                        syncedLyrics = r.syncedLyrics,
+                                        plainLyrics = r.plainLyrics,
+                                        coverUrl = meta.coverUrl,
+                                    )
+                                )
+                            }
+                            delay(config.requestDelayMs)
+                        }
+                    } ?: log("  [last-resort] \"$query\" ran out of time — scoring its ${collected.size} partial candidates")
+                    collected
                 }
-            }
-        } ?: log("  [last-resort] time budget exhausted — scoring the ${rescue.size} candidates collected so far")
+            }.flatMap { it.await() }
+        }
 
         val localViews = buildList {
             add(local)

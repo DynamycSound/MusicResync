@@ -3,6 +3,8 @@ package pl.lambada.songsync.data.remote.lyrics_providers.others
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import pl.lambada.songsync.util.networking.Ktor.client
@@ -78,15 +80,22 @@ class LastResortAPI {
      */
     suspend fun canonicalize(query: String, limit: Int = 3): List<Meta> {
         if (query.isBlank()) return emptyList()
+        // iTunes and Deezer are independent services — query both at once (issue #9: sequential waits stack,
+        // and one slow endpoint used to delay the other's answer for nothing). iTunes results still win ties.
+        val (itunesItems, deezerItems) = coroutineScope {
+            val i = async { itunes(query, limit) }
+            val d = async { deezer(query, limit) }
+            i.await() to d.await()
+        }
         val out = LinkedHashMap<String, Meta>()
 
-        for (item in itunes(query, limit)) {
+        for (item in itunesItems) {
             val title = item.trackName?.takeIf { it.isNotBlank() } ?: continue
             val artist = item.artistName?.takeIf { it.isNotBlank() } ?: continue
             val cover = item.artworkUrl100?.takeIf { it.isNotBlank() }?.let(::upscaleITunes)
             out.putIfAbsent("${artist.lowercase()}|${title.lowercase()}", Meta(title, artist, cover))
         }
-        for (item in deezer(query, limit)) {
+        for (item in deezerItems) {
             val title = item.title?.takeIf { it.isNotBlank() } ?: continue
             val artist = item.artist?.name?.takeIf { it.isNotBlank() } ?: continue
             val cover = item.album?.cover_xl?.takeIf { it.isNotBlank() } ?: item.album?.cover_big
