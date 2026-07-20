@@ -140,6 +140,11 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     var batchAutoTryProviders by mutableStateOf(prefs[batchAutoTryProvidersKey] ?: true)
         private set
 
+    // Fast mode for the single-song search: race only the top providers with a short timeout. Off by default —
+    // the full chain (plus the last-resort rescue) finds more, fast mode answers sooner.
+    var singleFastMode by mutableStateOf(prefs[singleFastModeKey] ?: false)
+        private set
+
     var sortBy by mutableStateOf(
         SortValues.entries
             .find { it.name == (prefs[sortByKey] ?: SortValues.TITLE.name) }!!
@@ -257,6 +262,11 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         batchAutoTryProviders = to
     }
 
+    fun updateSingleFastMode(to: Boolean) {
+        dataStore.set(singleFastModeKey, to)
+        singleFastMode = to
+    }
+
     fun updateSortOrder(to: SortOrders) {
         dataStore.set(sortOrderKey, to.queryName)
         sortOrder = to
@@ -292,3 +302,4 @@ private val batchCorrectMetadataKey = booleanPreferencesKey("batch_correct_metad
 private val batchSkipExistingKey = booleanPreferencesKey("batch_skip_existing")
 private val batchSkipNoLyricsKey = booleanPreferencesKey("batch_skip_no_lyrics")
 private val batchAutoTryProvidersKey = booleanPreferencesKey("batch_auto_try_providers")
+private val singleFastModeKey = booleanPreferencesKey("single_fast_mode")

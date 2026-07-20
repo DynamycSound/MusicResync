@@ -54,16 +54,35 @@ object FilenameParser {
     /** Lowercased alphanumerics only — collapses "$uicideboy$"/"_UICIDEBOY_" to the single token "uicideboy". */
     private fun collapse(s: String): String = s.lowercase().filter { it.isLetterOrDigit() }
 
-    /** Pull "feat./ft." artists out of a title, returning the cleaned title and the extracted names. */
+    /** Splits a captured feat-clause value into individual artist names. */
+    private fun splitFeaturedNames(value: String): List<String> = value
+        .split(Regex("""\s*(?:,|&|x|and|\+)\s*""", RegexOption.IGNORE_CASE))
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+
+    /**
+     * Pull "feat./ft." artists out of a title, returning the cleaned title and the extracted names. Handles
+     * both a bracketed clause anywhere in the string ("Harli Kvin (feat. AV47) 420" — trailing junk after the
+     * clause used to defeat the end-anchored regex) and an unbracketed clause at the end.
+     */
     private fun extractFeatured(title: String): Pair<String, List<String>> {
-        val m = TextMatch.featRegex.find(title) ?: return title to emptyList()
-        val names = m.groupValues[1]
-            .split(Regex("""\s*(?:,|&|x|and|\+)\s*""", RegexOption.IGNORE_CASE))
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-        val cleaned = title.removeRange(m.range).trim().trim('-', '|', '/').trim()
+        val names = mutableListOf<String>()
+        var cleaned = TextMatch.parenFeatRegex.replace(title) { m ->
+            names += splitFeaturedNames(m.groupValues[1]); " "
+        }
+        TextMatch.featRegex.find(cleaned)?.let { m ->
+            names += splitFeaturedNames(m.groupValues[1])
+            cleaned = cleaned.removeRange(m.range)
+        }
+        cleaned = cleaned.replace(Regex("""\s+"""), " ").trim().trim('-', '|', '/').trim()
+        if (names.isEmpty()) return title to emptyList()
         return (cleaned.ifBlank { title }) to names
     }
+
+    /** Trailing orphan number left behind by SnapTube-style "_420" suffixes ("Harli Kvin 420" -> "Harli Kvin"). */
+    private val trailingJunkNumber = Regex("""\s+\d{2,4}$""")
+
+    private fun stripTrailingJunkNumber(s: String): String = trailingJunkNumber.replace(s, "").trim()
 
     private fun candidate(title: String, artist: String?, strategy: MatchStrategy): QueryCandidate? {
         val cleanTitle = TextMatch.cleanTitleArtist(title)
@@ -111,6 +130,13 @@ object FilenameParser {
                 if (!loose.equals(titlePart, ignoreCase = true) && loose.isNotBlank())
                     add(candidate(loose, primary, MatchStrategy.FILENAME_LOOSE))
 
+                // A trailing orphan number is usually ripper junk (an underscore suffix like "_420" turned into
+                // " 420" by the cleanup). Try the title without it — as a LOOSE fallback, so a genuine numeric
+                // title still gets its exact query first and a stripped-title match stays review-grade.
+                val noJunkNo = stripTrailingJunkNumber(titlePart)
+                if (!noJunkNo.equals(titlePart, ignoreCase = true) && noJunkNo.isNotBlank())
+                    add(candidate(noJunkNo, artistPart, MatchStrategy.FILENAME_LOOSE))
+
                 // Collapsed artist (alphanumerics only, no spaces) for stylized names whose decorations get
                 // mangled on disk: "_UICIDEBOY_" / "$uicideboy$" -> "uicideboy", "P!nk" -> "pnk", "deadmau5".
                 // LRCLib indexes these as one token, so a spaced/decorated query misses them entirely.
@@ -128,11 +154,16 @@ object FilenameParser {
             val loosePlain = loosenTitle(cleaned)
             if (!loosePlain.equals(cleaned, ignoreCase = true) && loosePlain.isNotBlank())
                 add(candidate(loosePlain, null, MatchStrategy.FILENAME_TITLE_ONLY))
+            val noJunkPlain = stripTrailingJunkNumber(cleaned)
+            if (!noJunkPlain.equals(cleaned, ignoreCase = true) && noJunkPlain.isNotBlank())
+                add(candidate(noJunkPlain, null, MatchStrategy.FILENAME_TITLE_ONLY))
         }
 
-        // 1) Trust tags first when they look real.
+        // 1) Trust tags first when they look real. Placeholder artists ("Unknown", "Various Artists"…) are
+        // treated as absent — querying and scoring against them only hurts (a result by the real artist would
+        // "disagree" with the placeholder and be rejected).
         val title = tagTitle?.takeIf { it.isNotBlank() && it != "<unknown>" }
-        val artist = tagArtist?.takeIf { it.isNotBlank() && it != "<unknown>" }
+        val artist = tagArtist?.takeIf { !TextMatch.isJunkArtist(it) }
         if (title != null) {
             add(candidate(title, artist, MatchStrategy.TAGS))
             // If the tag title itself is "Artist - Title", split it too.

@@ -47,7 +47,23 @@ data class MatchConfig(
      *  this, a single unresponsive provider could burn retries × timeouts × candidates before the next provider
      *  even got a chance. */
     val providerTimeoutMs: Long = 25_000,
-)
+) {
+    companion object {
+        /**
+         * "Fast mode" for the single-song search: only the top [maxProviders] providers, one retry, a short
+         * per-provider budget and minimal politeness delay. Trades a little reliability for speed — the regular
+         * config stays the default for batch runs.
+         */
+        fun fast(providerOrder: List<Providers>, maxProviders: Int = 2) = MatchConfig(
+            providerOrder = providerOrder.take(maxProviders),
+            maxRetries = 1,
+            requestDelayMs = 50,
+            maxCandidatesPerProvider = 3,
+            retryBaseDelayMs = 250,
+            providerTimeoutMs = 8_000,
+        )
+    }
+}
 
 /**
  * The brain of MusicResync's batch fetch. For one local track it walks the candidate ladder (best-guess query
@@ -203,7 +219,7 @@ class SmartLyricsMatcher(
                 .filter { !it.plainLyrics.isNullOrBlank() }
                 .map { r ->
                     val pr = ProviderResult(r.trackName, r.artistName, r.duration, r.albumName, false)
-                    Triple(pr, scoreFor(local, pr, cand.strategy), r.plainLyrics!!)
+                    Triple(pr, scoreFor(local, pr, cand), r.plainLyrics!!)
                 }
                 .sortedByDescending { it.second.score }
                 .firstOrNull { it.second.tier != MatchTier.REJECT }
@@ -239,6 +255,12 @@ class SmartLyricsMatcher(
         candidates: List<QueryCandidate>,
         config: MatchConfig = MatchConfig(),
         log: (String) -> Unit = { Log.i(TAG, it) },
+        /**
+         * Optional album-art comparer: given a candidate's cover URL, returns a bonus in
+         * [0, RescueCandidate.MAX_COVER_BONUS] when it visually matches the local file's embedded art
+         * (0 when it differs or can't be compared). Additive-only — see [RescueCandidate.coverBonus].
+         */
+        coverBonus: (suspend (coverUrl: String) -> Double)? = null,
     ): LastResortHit? {
         // Try several reasonable candidate queries, not just the first — a single garbled query often
         // canonicalizes badly, while the loosened/filename variants land the right canonical name.
@@ -287,11 +309,23 @@ class SmartLyricsMatcher(
             }.flatMap { it.await() }
         }
 
+        // Optional thumbnail check: compare each distinct rescued cover against the local file's embedded art
+        // once, then stamp the (additive-only) bonus onto the candidates that carry that cover.
+        val withBonus = if (coverBonus == null) rescue else {
+            val bonusByUrl = rescue.mapNotNull { it.coverUrl }.distinct().associateWith { url ->
+                runCatching { coverBonus(url) }.getOrDefault(0.0)
+            }
+            rescue.map { c ->
+                val b = c.coverUrl?.let { bonusByUrl[it] } ?: 0.0
+                if (b > 0.0) c.copy(coverBonus = b) else c
+            }
+        }
+
         val localViews = buildList {
             add(local)
             candidates.forEach { c -> add(LocalTrack(c.title, c.artist, local.durationSec, local.album)) }
         }.distinct()
-        val hit = selectBestRescue(localViews, rescue)
+        val hit = selectBestRescue(localViews, withBonus)
         if (hit == null) log("  [last-resort] no believable rescue cleared the confidence bar (${rescue.size} candidates)")
         else log("  [last-resort] ${if (hit.synced) "synced" else "plain"} rescue -> ${hit.artist} - ${hit.title}")
         return hit
@@ -341,7 +375,7 @@ class SmartLyricsMatcher(
             album = local.album,
             hasSyncedLyrics = true,
         )
-        var conf = scoreFor(local, pr, cand.strategy)
+        var conf = scoreFor(local, pr, cand)
         if (durationSec == null && conf.tier == MatchTier.AUTO_ACCEPT) {
             conf = conf.copy(score = 0.80, tier = MatchTier.REVIEW)
         }
@@ -373,7 +407,7 @@ class SmartLyricsMatcher(
             }.getOrNull() ?: break
 
             val pr = ProviderResult(info.songName, info.artistName, null, null, true)
-            val conf = scoreFor(local, pr, cand.strategy)
+            val conf = scoreFor(local, pr, cand)
             val lyrics = if (conf.score >= ConfidenceScorer.REVIEW_THRESHOLD) {
                 runCatching { withRetry(config.maxRetries, config.retryBaseDelayMs) { service.getSyncedLyrics(info, provider) } }.getOrNull()
             } else null
@@ -388,17 +422,23 @@ class SmartLyricsMatcher(
     }
 
     /**
-     * Scores a hit, then caps remix/version base-song fallbacks at REVIEW. When the only match we could find is
-     * the BASE song for a remix (via the loosened candidate), its lyrics are usually right but the *timing*
-     * differs (a remix changes tempo), so we never silently auto-accept it -- the user verifies and nudges the
-     * offset in the player instead.
+     * Scores a hit against BOTH the raw local tags and the candidate's own parse of the messy tags/filename,
+     * keeping the better view. The raw tags are often garbage exactly when the filename parse is right (title
+     * "Ariana Grande - Focus" with artist "Unknown": the raw view sees a 30%-similar title and a disagreeing
+     * artist and rejects the correct hit, while the parsed view — title "Focus", artist "Ariana Grande" —
+     * matches it perfectly). Single-song search rescued these via the slow last-resort path; scoring the parsed
+     * view makes the primary providers accept them directly, in batch too.
+     *
+     * Precision guard: a view without an artist (title-only candidate) cannot veto a wrong singer, so it only
+     * counts when the runtime matches exactly — otherwise an identically-titled song by a different artist
+     * would score 1.0 on title alone.
+     *
+     * Remix/version base-song fallbacks (the loosened candidate) stay capped at REVIEW: their lyrics are
+     * usually right but the *timing* differs (a remix changes tempo), so we never silently auto-accept one --
+     * the user verifies and nudges the offset in the player instead.
      */
-    private fun scoreFor(local: LocalTrack, pr: ProviderResult, strategy: MatchStrategy): ConfidenceBreakdown {
-        val conf = ConfidenceScorer.score(local, pr)
-        return if (strategy == MatchStrategy.FILENAME_LOOSE && conf.tier == MatchTier.AUTO_ACCEPT)
-            conf.copy(score = 0.80, tier = MatchTier.REVIEW)
-        else conf
-    }
+    private fun scoreFor(local: LocalTrack, pr: ProviderResult, cand: QueryCandidate): ConfidenceBreakdown =
+        scoreHitAgainstViews(local, pr, cand)
 
     private suspend fun searchLrcLib(
         query: String, local: LocalTrack, cand: QueryCandidate, config: MatchConfig, log: (String) -> Unit
@@ -416,7 +456,7 @@ class SmartLyricsMatcher(
             .filter { !it.syncedLyrics.isNullOrBlank() } // batch needs synced lyrics
             .map { r ->
                 val pr = ProviderResult(r.trackName, r.artistName, r.duration, r.albumName, true)
-                ScoredHit(Providers.LRCLIB, cand.strategy, pr, scoreFor(local, pr, cand.strategy), r.syncedLyrics, null)
+                ScoredHit(Providers.LRCLIB, cand.strategy, pr, scoreFor(local, pr, cand), r.syncedLyrics, null)
             }
             .sortedByDescending { it.confidence.score }
             .take(config.maxCandidatesPerProvider)
@@ -439,9 +479,27 @@ class SmartLyricsMatcher(
                 album = s.album?.name,
                 hasSyncedLyrics = true,
             )
-            ScoredHit(Providers.NETEASE, cand.strategy, pr, scoreFor(local, pr, cand.strategy), null, s.id)
+            ScoredHit(Providers.NETEASE, cand.strategy, pr, scoreFor(local, pr, cand), null, s.id)
         }
     }
+}
+
+/**
+ * Scores [pr] against BOTH the raw local tags and [cand]'s own parse of the messy tags/filename, keeping the
+ * better view (see the call-site docs on SmartLyricsMatcher.scoreFor). A view without an artist can't veto a
+ * wrong singer, so it only counts when the runtime matches exactly. Pure and Android-free — unit-testable.
+ */
+internal fun scoreHitAgainstViews(local: LocalTrack, pr: ProviderResult, cand: QueryCandidate): ConfidenceBreakdown {
+    var best = ConfidenceScorer.score(local, pr)
+    val view = LocalTrack(cand.title, cand.artist, local.durationSec, local.album)
+    if (view.title != local.title || view.artist != local.artist) {
+        val viewConf = ConfidenceScorer.score(view, pr)
+        val viewTrustable = !cand.artist.isNullOrBlank() || viewConf.durationMatched
+        if (viewTrustable && viewConf.score > best.score) best = viewConf
+    }
+    return if (cand.strategy == MatchStrategy.FILENAME_LOOSE && best.tier == MatchTier.AUTO_ACCEPT)
+        best.copy(score = 0.80, tier = MatchTier.REVIEW)
+    else best
 }
 
 /** A raw rescued lyrics candidate (a canonicalized provider result + its lyrics) awaiting confidence validation. */
@@ -450,7 +508,17 @@ data class RescueCandidate(
     val syncedLyrics: String?,
     val plainLyrics: String?,
     val coverUrl: String?,
-)
+    /**
+     * Extra confidence in [0, MAX_COVER_BONUS] earned by the candidate's album art visually matching the local
+     * file's embedded art. Strictly additive: art that differs (or can't be compared) contributes 0 and never
+     * subtracts — covers legitimately vary between releases of the same song.
+     */
+    val coverBonus: Double = 0.0,
+) {
+    companion object {
+        const val MAX_COVER_BONUS = 0.05
+    }
+}
 
 /**
  * Validates and ranks last-resort [candidates] against several views of the local track (the raw tags plus the
@@ -472,7 +540,7 @@ fun selectBestRescue(localViews: List<LocalTrack>, candidates: List<RescueCandid
     val durationView = localViews.firstOrNull { it.durationSec != null && it.durationSec > 0 }
     val localHasDuration = durationView?.durationSec != null
 
-    data class Scored(val c: RescueCandidate, val synced: Boolean, val conf: ConfidenceBreakdown)
+    data class Scored(val c: RescueCandidate, val synced: Boolean, val conf: ConfidenceBreakdown, val ranking: Double)
 
     val scored = candidates.mapNotNull { c ->
         val synced = !c.syncedLyrics.isNullOrBlank()
@@ -492,11 +560,14 @@ fun selectBestRescue(localViews: List<LocalTrack>, candidates: List<RescueCandid
         // rescue through when the best cleaned candidate title really matches or the duration is exact.
         if (!conf.durationMatched && conf.title < 0.55) return@mapNotNull null
 
-        Scored(c, synced, conf)
+        // Album-art agreement is additive-only: it lifts the ranking of a candidate whose cover matches the
+        // local file's embedded art, but a mismatch never pushes a candidate below the acceptance gates above.
+        val ranking = (conf.score + c.coverBonus.coerceIn(0.0, RescueCandidate.MAX_COVER_BONUS)).coerceAtMost(1.0)
+        Scored(c, synced, conf, ranking)
     }
 
     val best = scored.sortedWith(
-        compareByDescending<Scored> { it.synced }.thenByDescending { it.conf.score }
+        compareByDescending<Scored> { it.synced }.thenByDescending { it.ranking }
     ).firstOrNull() ?: return null
 
     val body = if (best.synced) best.c.syncedLyrics!! else best.c.plainLyrics!!
