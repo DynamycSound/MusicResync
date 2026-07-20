@@ -10,6 +10,8 @@ enum class MatchStrategy(val label: String) {
     FILENAME_TITLE_ARTIST("filename: Title - Artist"),
     FILENAME_LOOSE("filename: loosened"),
     FILENAME_TITLE_ONLY("filename: title only"),
+    /** Identity discovered by matching the file's embedded cover art against iTunes/Deezer results. */
+    COVER_IDENTITY("cover identity"),
 }
 
 /**
@@ -84,6 +86,20 @@ object FilenameParser {
 
     private fun stripTrailingJunkNumber(s: String): String = trailingJunkNumber.replace(s, "").trim()
 
+    /**
+     * Any bracketed clause, regardless of content — the nuclear fallback for junk the noise list misses.
+     * Also matches an UNTERMINATED trailing clause ("CC #2 (JUŽNI VETAR 2022"): earlier cleanup trims a
+     * closing bracket off the end of the string, leaving the opener dangling.
+     */
+    private val anyBracketClause = Regex("""\s*[(\[][^()\[\]]*(?:[)\]]|$)""")
+
+    /**
+     * "CC #2 (JUŽNI VETAR 2022)" -> "CC #2": strips EVERY bracketed clause. Providers index the bare title;
+     * a leftover uploader note in brackets (not on the known-noise list) otherwise defeats the query.
+     */
+    private fun stripAllBrackets(s: String): String =
+        anyBracketClause.replace(s, " ").replace(Regex("""\s+"""), " ").trim().trim('-', '|', '/').trim()
+
     private fun candidate(title: String, artist: String?, strategy: MatchStrategy): QueryCandidate? {
         val cleanTitle = TextMatch.cleanTitleArtist(title)
         if (cleanTitle.isBlank()) return null
@@ -125,6 +141,14 @@ object FilenameParser {
                 if (!primary.equals(artistPart, ignoreCase = true))
                     add(candidate(titlePart, primary, MatchStrategy.FILENAME_PRIMARY_ARTIST))
 
+                // EVERY collab part, not just the first: "GRCA X FOX - BELE ŠARE" is indexed under Fox (with
+                // GRCA as the guest), so the second name may be the one providers know — and it must count as
+                // a legitimate artist guess so the wrong-singer veto doesn't treat the real artist as a stranger.
+                val collabParts = collabSeparator.split(artistPart).map { it.trim() }.filter { it.isNotBlank() }
+                if (collabParts.size > 1) collabParts.drop(1).take(2).forEach { part ->
+                    add(candidate(titlePart, part, MatchStrategy.FILENAME_PRIMARY_ARTIST))
+                }
+
                 // Loosened: drop "(... Remix)/(... Version)" so the BASE track can be found as a fallback.
                 val loose = loosenTitle(titlePart)
                 if (!loose.equals(titlePart, ignoreCase = true) && loose.isNotBlank())
@@ -136,6 +160,13 @@ object FilenameParser {
                 val noJunkNo = stripTrailingJunkNumber(titlePart)
                 if (!noJunkNo.equals(titlePart, ignoreCase = true) && noJunkNo.isNotBlank())
                     add(candidate(noJunkNo, artistPart, MatchStrategy.FILENAME_LOOSE))
+
+                // Bracket junk the noise list doesn't know ("CC #2 (JUŽNI VETAR 2022)"): try the bare title too.
+                val noBrackets = stripAllBrackets(titlePart)
+                if (!noBrackets.equals(titlePart, ignoreCase = true) && noBrackets.isNotBlank()) {
+                    add(candidate(noBrackets, artistPart, MatchStrategy.FILENAME_LOOSE))
+                    add(candidate(noBrackets, primary, MatchStrategy.FILENAME_LOOSE))
+                }
 
                 // Collapsed artist (alphanumerics only, no spaces) for stylized names whose decorations get
                 // mangled on disk: "_UICIDEBOY_" / "$uicideboy$" -> "uicideboy", "P!nk" -> "pnk", "deadmau5".
@@ -157,6 +188,9 @@ object FilenameParser {
             val noJunkPlain = stripTrailingJunkNumber(cleaned)
             if (!noJunkPlain.equals(cleaned, ignoreCase = true) && noJunkPlain.isNotBlank())
                 add(candidate(noJunkPlain, null, MatchStrategy.FILENAME_TITLE_ONLY))
+            val noBracketsPlain = stripAllBrackets(cleaned)
+            if (!noBracketsPlain.equals(cleaned, ignoreCase = true) && noBracketsPlain.isNotBlank())
+                add(candidate(noBracketsPlain, null, MatchStrategy.FILENAME_TITLE_ONLY))
         }
 
         // 1) Trust tags first when they look real. Placeholder artists ("Unknown", "Various Artists"…) are
@@ -166,6 +200,12 @@ object FilenameParser {
         val artist = tagArtist?.takeIf { !TextMatch.isJunkArtist(it) }
         if (title != null) {
             add(candidate(title, artist, MatchStrategy.TAGS))
+            // A tag artist that is really a YouTube channel name ("WAV3POP - Topic", "Crni Cerak TV"): also
+            // try the decoration-stripped reading. The raw value stays first, so nothing is lost if the artist
+            // genuinely ends in "TV".
+            val channelless = artist?.let { TextMatch.stripChannelSuffix(it) }
+            if (!channelless.isNullOrBlank() && !channelless.equals(artist, ignoreCase = true))
+                add(candidate(title, channelless, MatchStrategy.TAGS))
             // If the tag title itself is "Artist - Title", split it too.
             if (title.contains(Regex("""\s+-\s+"""))) addDashCandidates(title)
         }

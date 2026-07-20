@@ -35,6 +35,7 @@ class LastResortAPI {
         val trackName: String? = null,
         val artistName: String? = null,
         val artworkUrl100: String? = null,
+        val trackTimeMillis: Double? = null,
     )
 
     @Serializable
@@ -45,6 +46,7 @@ class LastResortAPI {
         val title: String? = null,
         val artist: DeezerArtist? = null,
         val album: DeezerAlbum? = null,
+        val duration: Double? = null,
     )
 
     @Serializable
@@ -100,6 +102,40 @@ class LastResortAPI {
             val artist = item.artist?.name?.takeIf { it.isNotBlank() } ?: continue
             val cover = item.album?.cover_xl?.takeIf { it.isNotBlank() } ?: item.album?.cover_big
             out.putIfAbsent("${artist.lowercase()}|${title.lowercase()}", Meta(title, artist, cover))
+        }
+        return out.values.toList()
+    }
+
+    /** A possible identity for a bare-title query: canonical names plus cover art + runtime for verification. */
+    data class IdCandidate(val title: String, val artist: String, val coverUrl: String?, val durationSec: Double?)
+
+    /**
+     * Wide search used by cover-driven identification. Unlike [canonicalize] (top few rows only), this returns
+     * up to [limit] rows per service WITH duration and album art, so a niche track buried deep in the results
+     * ("Bounce" by Voyage sits at ~#18 for the bare query "bounce") can still be picked out by its cover.
+     */
+    suspend fun identityCandidates(query: String, limit: Int = 25): List<IdCandidate> {
+        if (query.isBlank()) return emptyList()
+        val (itunesItems, deezerItems) = coroutineScope {
+            val i = async { itunes(query, limit) }
+            val d = async { deezer(query, limit) }
+            i.await() to d.await()
+        }
+        val out = LinkedHashMap<String, IdCandidate>()
+        for (item in deezerItems) {
+            val title = item.title?.takeIf { it.isNotBlank() } ?: continue
+            val artist = item.artist?.name?.takeIf { it.isNotBlank() } ?: continue
+            val cover = item.album?.cover_big?.takeIf { it.isNotBlank() } ?: item.album?.cover_xl
+            out.putIfAbsent("${artist.lowercase()}|${title.lowercase()}", IdCandidate(title, artist, cover, item.duration))
+        }
+        for (item in itunesItems) {
+            val title = item.trackName?.takeIf { it.isNotBlank() } ?: continue
+            val artist = item.artistName?.takeIf { it.isNotBlank() } ?: continue
+            val cover = item.artworkUrl100?.takeIf { it.isNotBlank() }?.let(::upscaleITunes)
+            out.putIfAbsent(
+                "${artist.lowercase()}|${title.lowercase()}",
+                IdCandidate(title, artist, cover, item.trackTimeMillis?.let { it / 1000.0 })
+            )
         }
         return out.values.toList()
     }

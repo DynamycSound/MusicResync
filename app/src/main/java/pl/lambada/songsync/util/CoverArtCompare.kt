@@ -18,7 +18,7 @@ import java.net.URL
 object CoverArtCompare {
 
     /** Hamming distance (of 64 bits) at or below which two covers count as "the same picture". */
-    private const val MATCH_MAX_DISTANCE = 10
+    const val MATCH_MAX_DISTANCE = 10
 
     /** 64-bit average hash of a bitmap: downscale to 8x8, gray, threshold on the mean. */
     fun aHash64(bitmap: Bitmap): Long {

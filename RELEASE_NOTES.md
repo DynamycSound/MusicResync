@@ -1,14 +1,16 @@
-## MusicResync v1.6.3 — hotfix
+## MusicResync v1.6.4
 
-### Fixed: wrong lyrics saved for songs with short, generic titles
-v1.6.2's looser matching (which judges hits against the parsed filename, not just the raw tags) opened a precision hole: a song whose title matches some unrelated track exactly — "PETROV - RARI" getting the German "Rari" by lil doggo, "Numero - BMW" getting "BMW" by Cecilio G., "UKIC X PETROV - A TI?" getting "A Ti" by Dyango, "QuESt - Automatic" getting a Japanese "Automatic (Live)" — could ride in on the title alone, because the artist-less view of the track had nothing left to object to the wrong singer.
+### New: cover-art identification — the file's own thumbnail now tells us who sings it
+A file like **"Bounce"** with artist "Unknown" is textually indistinguishable from dozens of other songs called Bounce — that's how it got Russian lyrics from a completely different track. But its embedded cover art *is* distinguishable. When a file gives the matcher no usable artist at all, MusicResync now searches iTunes/Deezer widely with the bare title, compares each result's album art against the file's own cover, and treats a visual match (plus a compatible runtime) as the file's real identity. For the reported "Bounce", that discovers **Voyage** — whose synced lyrics are right there on LRCLib — and the search leads with "Voyage Bounce" instead of a blind "Bounce".
 
-New **wrong-singer veto**: whenever your file gives the matcher *any* artist guess (from the tags or the parsed filename) and a provider's result names an artist that agrees with **none** of those guesses, the result is rejected — across the normal search, the plain-lyrics fallback, and the last-resort rescue. An exact runtime match still overrides a disagreeing artist (that trust is what makes junk-tagged rips matchable at all), and a result with no artist at all is unaffected. A provider artist written in a different script (e.g. CJK vs. a Latin filename) now counts as disagreeing too.
+The same check now guards against runtime coincidences: a result whose artist agrees with *none* of the file's artist readings (like **"CHECK"** by WAV3POP getting Portuguese lyrics from a same-length "Check" by The Boy) gets a second opinion from the cover before being trusted — if the art identifies a different artist, the impostor is skipped.
 
-### Fixed: lyrics player not following the song / janky scrolling
-The synced-lyrics player (the adjust-timing screen) only scrolled once the highlighted line left a visibility window, which looked like the list wasn't following the song at all — and then it lurched a whole screen at a time. It now glides continuously: each new line smoothly eases the list so the active line settles just above centre, Samsung-Music style. Seeks and taps on the progress bar still jump straight to the right spot.
+### Messy names that now resolve (verified against the live catalogues)
+- **"DEVITO - FLEX ????"** — runs of `?` left by characters the filesystem couldn't store are stripped from queries; the track ("Taj flex" by Devito) is on LRCLib.
+- **"CRNI CERAK - CC #2 (JUŽNI VETAR 2022)"** — bracketed junk the noise list doesn't know now falls back to a bare-title query; "CC #2" by Crni Cerak is on LRCLib.
+- **"GRCA X FOX - BELE ŠARE"** — *every* collab artist is now tried, not just the first: the track is indexed under Fox (with GRCA as the guest), and Fox no longer counts as a stranger to the wrong-singer veto.
+- **"CHECK" by "WAV3POP - Topic"** — YouTube channel decorations (" - Topic", " TV", " Official"…) are stripped into an extra artist reading, so the real artist name reaches the providers.
 
-### Renamed leftovers
-All user-facing "SongSync" texts now say **MusicResync** — including the `[by:]` tag written into generated .lrc files, the settings/about texts, and the welcome screen (all languages). The credit to the original SongSync project by Lambada10 remains, as it should.
+Songs genuinely absent from every lyrics catalogue still fail honestly — no fluke lyrics.
 
 Install over your existing app — it's signed with the same key, so it upgrades in place.

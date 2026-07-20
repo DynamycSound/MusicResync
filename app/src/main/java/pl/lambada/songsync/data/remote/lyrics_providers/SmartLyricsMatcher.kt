@@ -537,6 +537,15 @@ internal fun wrongSingerVetoed(
     conf: ConfidenceBreakdown,
 ): Boolean {
     if (conf.durationMatched) return false
+    return artistDisagreesWithAllGuesses(artistGuesses, resultArtist)
+}
+
+/**
+ * True when [resultArtist] is present and agrees with NONE of [artistGuesses]. This is the veto's core test,
+ * exposed separately so callers can also spot a hit that survived only on the exact-duration escape and ask
+ * for extra evidence (e.g. cover-art identification) before trusting it.
+ */
+internal fun artistDisagreesWithAllGuesses(artistGuesses: List<String>, resultArtist: String?): Boolean {
     if (resultArtist.isNullOrBlank()) return false
     val guesses = artistGuesses.filter { TextMatch.normalizeForCompare(it).isNotEmpty() }
     if (guesses.isEmpty()) return false
