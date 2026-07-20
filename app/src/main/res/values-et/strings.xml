@@ -24,14 +24,14 @@
     <string name="no_results">Tulemusi pole</string>
     <string name="no_internet_server">Nutiseadmel puudub internetiühendus või server ei tööta</string>
     <string name="unknown">Teadmata</string>
-    <string name="what_is_songsync">SongSync võimaldab sul oma kohaliku muusikakogu jaoks allalaadida sünkroniseeritud laulusõnu (.lrc failidena).</string>
+    <string name="what_is_songsync">MusicResync võimaldab sul oma kohaliku muusikakogu jaoks allalaadida sünkroniseeritud laulusõnu (.lrc failidena).</string>
     <string name="extra_what_is_songsync">Võid ka konkreetsete laulude sõnu otsida (ja neid salvestada allalaadimiste kausta).</string>
     <string name="app_version">Rakenduse versioon: %1$s</string>
     <string name="spotify_for_developers">Spotify arendajate jaoks</string>
-    <string name="about_songsync">Rakenduse teave: SongSync</string>
-    <string name="how_we_get_lyrics">SongSync kasutab laulusõnade leidmiseks SpotifyLyrics API liidestust. Lisateavet SpotifyLyrics API kohta leiad nende GitHubi lehelt.</string>
+    <string name="about_songsync">Rakenduse teave: MusicResync</string>
+    <string name="how_we_get_lyrics">MusicResync kasutab laulusõnade leidmiseks SpotifyLyrics API liidestust. Lisateavet SpotifyLyrics API kohta leiad nende GitHubi lehelt.</string>
     <string name="view_on_github">Vaata GitHubis</string>
-    <string name="we_are_open_source">SongSync on avatud lähtekoodil põhinev arendusprojekt. Rakenduse lähtekoodi leiad GitHubist.</string>
+    <string name="we_are_open_source">MusicResync on avatud lähtekoodil põhinev arendusprojekt. Rakenduse lähtekoodi leiad GitHubist.</string>
     <string name="contributors">Kaasautorid</string>
     <string name="telegram_group">Telegrami grupp</string>
     <string name="create_issue">Võid ka lisada veateate GitHubis (link on ülal).</string>
@@ -153,7 +153,7 @@
     <string name="all_files_access">Ligipääs kõikidele failidele</string>
     <string name="all_files_access_description">See on vajalik lrc-failide salvestamiseks lugude kaustadesse ilma, et peaks iga kord failivalijat avama</string>
     <string name="_continue">Jätka</string>
-    <string name="init_screen_title">Tere tulemast kasutama SongSynci!</string>
+    <string name="init_screen_title">Tere tulemast kasutama MusicResynci!</string>
     <string name="init_screen_description">Alustamiseks palun luba järgnevad õigused:</string>
     <string name="now_playing_song">Hetkel esitamisel lugu</string>
     <string name="notification_access">Ligipääs teavitustele (valikuline)</string>

@@ -19,12 +19,12 @@
     <string name="save_lrc_file">.lrc ファイルを保存</string>
     <string name="no_results">結果なし</string>
     <string name="unknown">不明</string>
-    <string name="what_is_songsync">SongSync は同期可能な歌詞ファイル (.lrc ファイル) をローカルに保存するアプリです。</string>
+    <string name="what_is_songsync">MusicResync は同期可能な歌詞ファイル (.lrc ファイル) をローカルに保存するアプリです。</string>
     <string name="app_version">アプリのバージョン: %1$s</string>
     <string name="spotify_for_developers">Spotify for Developers</string>
-    <string name="about_songsync">SongSync について</string>
+    <string name="about_songsync">MusicResync について</string>
     <string name="view_on_github">GitHub を表示</string>
-    <string name="we_are_open_source">SongSync は、オープンソースプロジェクトです。ソースコードは GitHub にあります。</string>
+    <string name="we_are_open_source">MusicResync は、オープンソースプロジェクトです。ソースコードは GitHub にあります。</string>
     <string name="contributors">貢献者</string>
     <string name="telegram_group">Telegram グループ</string>
     <string name="source_code">ソースコード</string>
@@ -80,7 +80,7 @@
     <string name="please_do_not_close_the_app_this_may_take_a_while">アプリを閉じずにしばらくお待ちください</string>
     <string name="no_internet_server">インターネットが未接続またはサーバーがダウンしています</string>
     <string name="extra_what_is_songsync">特定の曲名を入力するだけでも歌詞を取得できます (ダウンロードして保存も可能)。</string>
-    <string name="how_we_get_lyrics">SongSync は SpotifyLyrics API を使用して歌詞を取得します。SpotifyLyrics API の詳細については、GitHub ページをご確認ください。</string>
+    <string name="how_we_get_lyrics">MusicResync は SpotifyLyrics API を使用して歌詞を取得します。SpotifyLyrics API の詳細については、GitHub ページをご確認ください。</string>
     <string name="bugs_or_suggestions_contact_us">バグを見つけましたか？それとも提案や貢献をしたいですか？お気軽に Telegram グループまでご連絡ください。</string>
     <string name="create_issue">GitHub (上記リンク) で Issue を作成する事もできます。</string>
     <string name="requires_higher_storage_permissions">このアプリは、音楽ライブラリをスキャンして歌詞を保存するためにストレージアクセスの許可が必要です。</string>
@@ -149,7 +149,7 @@
     <string name="pure_black_theme_summary">ダークモードが有効化されている場合にピュアブラックテーマを使用します</string>
     <string name="all_files_access">すべてのファイルにアクセス</string>
     <string name="_continue">続行</string>
-    <string name="init_screen_title">SongSync にようこそ！</string>
+    <string name="init_screen_title">MusicResync にようこそ！</string>
     <string name="show_notification_permission">通知を表示 (オプション)</string>
     <string name="all_files_access_description">ファイルピッカーを毎回開かずに曲のディレクトリに lrc ファイルを保存するために必要です</string>
     <string name="show_notification_description">ダウンロードの進捗通知を表示するために使用します</string>

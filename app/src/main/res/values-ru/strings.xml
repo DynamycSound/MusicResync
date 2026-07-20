@@ -23,14 +23,14 @@
     <string name="no_results">Нет результатов</string>
     <string name="no_internet_server">Нет подключения к Интернету или сервер недоступен</string>
     <string name="unknown">Неизвестно</string>
-    <string name="what_is_songsync">SongSync - это приложение, которое позволяет загружать синхронизированные тексты песен (.lrc файлы) для вашей локальной музыкальной библиотеки.</string>
+    <string name="what_is_songsync">MusicResync - это приложение, которое позволяет загружать синхронизированные тексты песен (.lrc файлы) для вашей локальной музыкальной библиотеки.</string>
     <string name="extra_what_is_songsync">Вы также можете искать конкретные песни, чтобы получить их тексты (и сохранить их в загрузки).</string>
     <string name="app_version">Версия приложения: %1$s</string>
     <string name="spotify_for_developers">Spotify для разработчиков</string>
-    <string name="about_songsync">О SongSync</string>
-    <string name="how_we_get_lyrics">SongSync использует API SpotifyLyrics для получения текстов песен. Вы можете найти дополнительную информацию о API SpotifyLyrics на их странице GitHub.</string>
+    <string name="about_songsync">О MusicResync</string>
+    <string name="how_we_get_lyrics">MusicResync использует API SpotifyLyrics для получения текстов песен. Вы можете найти дополнительную информацию о API SpotifyLyrics на их странице GitHub.</string>
     <string name="view_on_github">Просмотреть на GitHub</string>
-    <string name="we_are_open_source">SongSync - это проект с открытым исходным кодом. Вы можете найти исходный код на GitHub.</string>
+    <string name="we_are_open_source">MusicResync - это проект с открытым исходным кодом. Вы можете найти исходный код на GitHub.</string>
     <string name="contributors">Авторы</string>
     <string name="bugs_or_suggestions_contact_us">Нашли ошибку? Есть предложение? Хотите внести свой вклад? Не стесняйтесь связаться со мной в моей группе Telegram.</string>
     <string name="telegram_group">Группа Telegram</string>
@@ -155,7 +155,7 @@
     <string name="show_notification_permission">Показывать уведомления (необязательно)</string>
     <string name="show_notification_description">Применяется для отображения уведомления о процессе загрузки</string>
     <string name="_continue">Продолжить</string>
-    <string name="init_screen_title">Добро пожаловать в SongSync!</string>
+    <string name="init_screen_title">Добро пожаловать в MusicResync!</string>
     <string name="init_screen_description">Для начала работы, пожалуйста, выдайте эти разрешения:</string>
     <string name="now_playing_song">Текущая песня</string>
     <string name="notification_access">Доступ к уведомлениям (необязательно)</string>

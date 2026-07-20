@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name" translatable="false">SongSync</string>
+    <string name="app_name" translatable="false">MusicResync</string>
     <string name="batch_download_lyrics">Descărcare lot de versuri</string>
     <string name="get_lyrics">Obținere versuri</string>
     <string name="try_again">Încercați din nou</string>
@@ -24,16 +24,16 @@
     <string name="no_results">Fără rezultate</string>
     <string name="no_internet_server">Fără conexiune la internet sau server-ul este jos</string>
     <string name="unknown">Necunoscut</string>
-    <string name="generated_using" translatable="false">Generat cu SongSync</string>
-    <string name="what_is_songsync">SongSync este o aplicație care vă permite descărcarea versurilor sincronizate (fișiere .lrc) pentru biblioteca dvs. de muzică locală.</string>
+    <string name="generated_using" translatable="false">Generat cu MusicResync</string>
+    <string name="what_is_songsync">MusicResync este o aplicație care vă permite descărcarea versurilor sincronizate (fișiere .lrc) pentru biblioteca dvs. de muzică locală.</string>
     <string name="extra_what_is_songsync">De asemenea, puteți căuta anumite melodii pentru a le obține versurile (și să le salvați în descărcări).</string>
     <string name="app_version">Versiunea aplicației: %1$s</string>
     <string name="spotify_for_developers">Spotify pentru Developeri</string>
     <string name="spotifylyrics_api" translatable="false">SpotifyLyrics API</string>
-    <string name="about_songsync">Despre SongSync</string>
-    <string name="how_we_get_lyrics">SongSync utilizează API-ul SpotifyLyrics ca să obțină versuri pentru melodii. Puteți găsi mai multe informații despre API-ul SpotifyLyrics pe pagina lor de GitHub.</string>
+    <string name="about_songsync">Despre MusicResync</string>
+    <string name="how_we_get_lyrics">MusicResync utilizează API-ul SpotifyLyrics ca să obțină versuri pentru melodii. Puteți găsi mai multe informații despre API-ul SpotifyLyrics pe pagina lor de GitHub.</string>
     <string name="view_on_github">Vizualizare pe GitHub</string>
-    <string name="we_are_open_source">SongSync este un proiect open-source. Puteți găsi sursa codului pe GitHub.</string>
+    <string name="we_are_open_source">MusicResync este un proiect open-source. Puteți găsi sursa codului pe GitHub.</string>
     <string name="contributors">Contribuitori</string>
     <string name="github" translatable="false">GitHub</string>
     <string name="telegram" translatable="false">Telegram</string>

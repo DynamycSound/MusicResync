@@ -14,7 +14,7 @@
     <string name="no_results">Žádné výsledky</string>
     <string name="please_try_again_later">Zkuste to prosím zvova později</string>
     <string name="save_lrc_file">Uložit .lrc soubor</string>
-    <string name="about_songsync">O SongSync</string>
+    <string name="about_songsync">O MusicResync</string>
     <string name="source_code">Zdrojový kód</string>
     <string name="support">Podpora</string>
     <string name="close_app">Zavřít aplikaci</string>
@@ -56,7 +56,7 @@
     <string name="date_modified">Datum změny</string>
     <string name="help_us_translate">Pomožte nám přeložit tuto aplikaci do vašeho jazyka!</string>
     <string name="translation_website">Otevřít Weblate</string>
-    <string name="init_screen_title">Vítej v SongSync!</string>
+    <string name="init_screen_title">Vítej v MusicResync!</string>
     <string name="app_version">Verze aplikace: %1$s</string>
     <string name="you_need_internet_connection">Potřebujete přístup ke internetu pro používání této aplikace.</string>
     <string name="permission_denied">Přístup odepřen</string>
@@ -72,7 +72,7 @@
     <string name="success">Úspěch: %1$d</string>
     <string name="failed">Selhalo: %1$d</string>
     <string name="spotify_api_rate_limit_reached">Limit možných požadavků Spotify API dosažen</string>
-    <string name="what_is_songsync">SongSync je aplikace, která umožňuje stahování synchronizovaného textu (.lrc soubory) pro vaší muziku.</string>
+    <string name="what_is_songsync">MusicResync je aplikace, která umožňuje stahování synchronizovaného textu (.lrc soubory) pro vaší muziku.</string>
     <string name="changelog">Seznam změn:\n%1$s</string>
     <string name="provider">Poskytovatel textů</string>
     <string name="provider_summary">Vyberte poskytovatel textů níže</string>
@@ -105,7 +105,7 @@
     <string name="show_notification_description">Použito pro ukázování průběhu stažení ve notifikaci</string>
     <string name="by">od</string>
     <string name="accept">Přijmout</string>
-    <string name="we_are_open_source">SongSync je open-source projekt. Můžete najít zdrojový kód na GitHubu.</string>
+    <string name="we_are_open_source">MusicResync je open-source projekt. Můžete najít zdrojový kód na GitHubu.</string>
     <string name="view_on_github">Zhlédnout na GitHubu</string>
     <string name="bugs_or_suggestions_contact_us">Našli jste chybu? Máte nápad? Chcete přispět? Neváhejte mě kontaktovat ve moji Telegram skupině.</string>
     <string name="filters">Filtry</string>
@@ -118,7 +118,7 @@
     <string name="no_internet_server">Zádný přístup ke internetu nebo server nereaguje na požadavky</string>
     <string name="extra_what_is_songsync">Můžete také hledat pro dané písně a získat její text (a uložit ho do stažených).</string>
     <string name="spotify_for_developers">Spotify pro Vývojáře</string>
-    <string name="how_we_get_lyrics">SongSync používá SpotifyLyrics API ke získání textů pro písně. Můžete zjistit více informací o SpotifyLyrics API na jejich GitHub stránkách.</string>
+    <string name="how_we_get_lyrics">MusicResync používá SpotifyLyrics API ke získání textů pro písně. Můžete zjistit více informací o SpotifyLyrics API na jejich GitHub stránkách.</string>
     <string name="create_issue">Můžete také vytvořit problém/issue na GitHubu (odkaz nahoře).</string>
     <string name="requires_higher_storage_permissions">Táto aplikace potřebuje přístup k uložišti pro skenování vaší hudební knihovnu a ukládání textů.</string>
     <string name="if_connected_spotify_down">Jestli jste připojen, asi Spotify nereaguje. Zkuste to prosím později znovu.</string>

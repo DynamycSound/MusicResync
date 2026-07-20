@@ -19,6 +19,7 @@ import pl.lambada.songsync.util.matching.MatchStrategy
 import pl.lambada.songsync.util.matching.MatchTier
 import pl.lambada.songsync.util.matching.ProviderResult
 import pl.lambada.songsync.util.matching.QueryCandidate
+import pl.lambada.songsync.util.matching.TextMatch
 import pl.lambada.songsync.util.networking.withRetry
 
 private const val TAG = "MusicResync"
@@ -140,7 +141,9 @@ class SmartLyricsMatcher(
                 val key = "${hit.provider}|${hit.result.title}|${hit.result.artist}|${hit.result.durationSec}"
                 val existing = hits[key]
                 if (existing == null || hit.confidence.score > existing.confidence.score) hits[key] = hit
-                if (hit.confidence.score > best) {
+                // REJECT-tier hits (e.g. wrong-singer vetoes) keep their raw score for the manual UI but must
+                // never drive the early stop — a vetoed 90% "match" isn't a reason to cancel other providers.
+                if (hit.tier != MatchTier.REJECT && hit.confidence.score > best) {
                     best = hit.confidence.score
                     log("  [${provider.displayName}] ${hit.strategy.label} -> ${hit.result.title} - ${hit.result.artist} (${hit.confidence.percent()}%${if (hit.confidence.durationMatched) ", duration✓" else ""})")
                 }
@@ -170,6 +173,7 @@ class SmartLyricsMatcher(
     ): List<ScoredHit> {
         val providerHits = LinkedHashMap<String, ScoredHit>()
         var providerBest = 0.0
+        val artistGuesses = artistGuessesFor(local, candidates)
         for (cand in candidates) {
             val query = cand.asSearchString()
             if (query.isBlank()) continue
@@ -180,11 +184,14 @@ class SmartLyricsMatcher(
                 Providers.LYRICSPLUS, Providers.BETTERLYRICS -> searchDirect(provider, local, cand, config, log)
                 else -> searchGeneric(provider, local, cand, config, log)
             }
-            for (hit in found) {
+            for (raw in found) {
+                val hit = if (wrongSingerVetoed(artistGuesses, raw.result.artist, raw.confidence))
+                    raw.copy(confidence = raw.confidence.copy(tier = MatchTier.REJECT))
+                else raw
                 val key = "${hit.provider}|${hit.result.title}|${hit.result.artist}|${hit.result.durationSec}"
                 val existing = providerHits[key]
                 if (existing == null || hit.confidence.score > existing.confidence.score) providerHits[key] = hit
-                if (hit.confidence.score > providerBest) providerBest = hit.confidence.score
+                if (hit.tier != MatchTier.REJECT && hit.confidence.score > providerBest) providerBest = hit.confidence.score
             }
             if (providerBest >= ConfidenceScorer.AUTO_ACCEPT_THRESHOLD) break
             delay(config.requestDelayMs)
@@ -208,6 +215,7 @@ class SmartLyricsMatcher(
     ): PlainHit? = withTimeoutOrNull(config.providerTimeoutMs) {
         // Same hard time budget as a regular provider (issue #9): this fallback runs after a failed search, so
         // letting its retries stack would just re-create the long wait we removed.
+        val artistGuesses = artistGuessesFor(local, candidates)
         for (cand in candidates) {
             val query = cand.asSearchString()
             if (query.isBlank()) continue
@@ -222,7 +230,7 @@ class SmartLyricsMatcher(
                     Triple(pr, scoreFor(local, pr, cand), r.plainLyrics!!)
                 }
                 .sortedByDescending { it.second.score }
-                .firstOrNull { it.second.tier != MatchTier.REJECT }
+                .firstOrNull { it.second.tier != MatchTier.REJECT && !wrongSingerVetoed(artistGuesses, it.first.artist, it.second) }
 
             if (best != null) {
                 log("  [plain fallback] ${best.first.title} - ${best.first.artist} (${best.second.percent()}%)")
@@ -416,7 +424,7 @@ class SmartLyricsMatcher(
             val key = "${hit.provider}|${hit.result.title}|${hit.result.artist}|${hit.result.durationSec}"
             val existing = hits[key]
             if (existing == null || hit.confidence.score > existing.confidence.score) hits[key] = hit
-            if (hit.confidence.score >= ConfidenceScorer.AUTO_ACCEPT_THRESHOLD) break
+            if (hit.tier != MatchTier.REJECT && hit.confidence.score >= ConfidenceScorer.AUTO_ACCEPT_THRESHOLD) break
         }
         return hits.values.sortedByDescending { it.confidence.score }
     }
@@ -502,6 +510,40 @@ internal fun scoreHitAgainstViews(local: LocalTrack, pr: ProviderResult, cand: Q
     else best
 }
 
+/**
+ * Every usable artist guess for the local file: the raw tag (when not junk-filtered away) plus each parsed
+ * candidate's artist. This is what the wrong-singer veto compares a provider's artist against.
+ */
+internal fun artistGuessesFor(local: LocalTrack, candidates: List<QueryCandidate>): List<String> =
+    (listOfNotNull(local.artist) + candidates.mapNotNull { it.artist })
+        .filter { it.isNotBlank() }
+        .distinct()
+
+/**
+ * The wrong-singer veto (v1.6.3 hotfix). Scoring hits against artist-less views of the local track (added in
+ * v1.6.2 for junk-tag files) opened a hole: a short generic title ("Rari", "BMW", "A Ti", "Automatic") matches
+ * some unrelated song exactly, and with no artist on the winning view nothing was left to veto the wrong singer
+ * — so batch runs saved lyrics of a completely different track. This closes the hole from the outside: when the
+ * file gives us artist guesses ([artistGuessesFor]) and the provider names an artist that agrees with NONE of
+ * them, the hit is vetoed. Two escapes keep the v1.6.2 recall wins intact:
+ *  - an exact runtime match still overrides a disagreeing artist (the same trust the scorer itself applies);
+ *  - a provider with no artist at all is not vetoed (nothing to disagree with).
+ * A provider artist in a different script (normalizes to nothing comparable) counts as disagreeing — it cannot
+ * be the same name our Latin guess spells, and the duration escape still saves genuine cross-script matches.
+ */
+internal fun wrongSingerVetoed(
+    artistGuesses: List<String>,
+    resultArtist: String?,
+    conf: ConfidenceBreakdown,
+): Boolean {
+    if (conf.durationMatched) return false
+    if (resultArtist.isNullOrBlank()) return false
+    val guesses = artistGuesses.filter { TextMatch.normalizeForCompare(it).isNotEmpty() }
+    if (guesses.isEmpty()) return false
+    if (TextMatch.normalizeForCompare(resultArtist).isEmpty()) return true
+    return guesses.maxOf { TextMatch.similarity(it, resultArtist) } < 0.50
+}
+
 /** A raw rescued lyrics candidate (a canonicalized provider result + its lyrics) awaiting confidence validation. */
 data class RescueCandidate(
     val result: ProviderResult,
@@ -539,6 +581,7 @@ data class RescueCandidate(
 fun selectBestRescue(localViews: List<LocalTrack>, candidates: List<RescueCandidate>): SmartLyricsMatcher.LastResortHit? {
     val durationView = localViews.firstOrNull { it.durationSec != null && it.durationSec > 0 }
     val localHasDuration = durationView?.durationSec != null
+    val artistGuesses = localViews.mapNotNull { it.artist }.filter { it.isNotBlank() }.distinct()
 
     data class Scored(val c: RescueCandidate, val synced: Boolean, val conf: ConfidenceBreakdown, val ranking: Double)
 
@@ -559,6 +602,10 @@ fun selectBestRescue(localViews: List<LocalTrack>, candidates: List<RescueCandid
         // "$uicideboy$ - Every Day I Pimp" -> "All of My Problems Always Involve Me" while still allowing a
         // rescue through when the best cleaned candidate title really matches or the duration is exact.
         if (!conf.durationMatched && conf.title < 0.55) return@mapNotNull null
+        // Wrong-singer veto: the max-over-views confidence above may have come from an artist-less view, which
+        // cannot object to a different singer with the same generic title ("Rari" by someone else entirely).
+        // When any local view supplies an artist and the rescue's artist agrees with none of them, drop it.
+        if (wrongSingerVetoed(artistGuesses, c.result.artist, conf)) return@mapNotNull null
 
         // Album-art agreement is additive-only: it lifts the ranking of a candidate whose cover matches the
         // local file's embedded art, but a mismatch never pushes a candidate below the acceptance gates above.
