@@ -284,7 +284,9 @@
 
     <!-- Fast mode (Settings) -->
     <string name="fast_mode">Fast matching</string>
-    <string name="fast_mode_desc">When searching a single song, race only the top two providers with a short timeout. Faster answers, but may find fewer songs than the full search.</string>
+    <string name="fast_mode_desc">Race all providers in parallel with tighter timeouts. Same providers and matching accuracy — just less waiting on slow servers.</string>
+    <string name="batch_fast_mode_desc">Same providers, same matching accuracy — tighter time budgets so slow servers cost seconds, not minutes.</string>
+    <string name="recommended">Recommended</string>
 
     <!-- Lyrics preview -->
     <string name="no_lyrics_in_file">No lyrics found in this file</string>

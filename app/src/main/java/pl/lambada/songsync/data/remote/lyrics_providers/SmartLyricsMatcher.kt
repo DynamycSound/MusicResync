@@ -51,15 +51,19 @@ data class MatchConfig(
 ) {
     companion object {
         /**
-         * "Fast mode" for the single-song search: only the top [maxProviders] providers, one retry, a short
-         * per-provider budget and minimal politeness delay. Trades a little reliability for speed — the regular
-         * config stays the default for batch runs.
+         * Fast mode: ALL enabled providers race in parallel (they do anyway) with one retry, a short
+         * per-provider budget and minimal politeness delay. v1.6.x additionally truncated the provider list
+         * to 2, which silently skipped LRCLib for some provider orders and cost real matches ("Ili Ili",
+         * "Peta Brzina" were reported "not found" purely because the provider that has them never ran) — speed
+         * comes from the caps and the early auto-accept stop, NOT from dropping providers, so reliability for
+         * indexed songs now equals the regular config. The full candidate ladder is kept: parsing messy names
+         * is what finds these files at all.
          */
-        fun fast(providerOrder: List<Providers>, maxProviders: Int = 2) = MatchConfig(
-            providerOrder = providerOrder.take(maxProviders),
+        fun fast(providerOrder: List<Providers>) = MatchConfig(
+            providerOrder = providerOrder,
             maxRetries = 1,
             requestDelayMs = 50,
-            maxCandidatesPerProvider = 3,
+            maxCandidatesPerProvider = 4,
             retryBaseDelayMs = 250,
             providerTimeoutMs = 8_000,
         )

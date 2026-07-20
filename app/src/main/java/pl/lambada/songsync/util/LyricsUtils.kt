@@ -367,7 +367,10 @@ suspend fun downloadLyrics(
         // The chain is tried strictly in the user's configured order (issue #6) — no adaptive reshuffling, so
         // the behaviour always matches what Settings shows.
         val providerOrder = if (!autoTryProviders) listOf(configuredProviders.first()) else configuredProviders
-        val songConfig = MatchConfig(providerOrder = providerOrder)
+        // Fast mode (recommended): same providers, same candidate ladder, same guards — just tighter retry/
+        // timeout budgets, so a hung host costs seconds instead of half a minute.
+        val songConfig = if (settings.batchFastMode) MatchConfig.fast(providerOrder)
+        else MatchConfig(providerOrder = providerOrder)
 
         // Always overwrite once we've decided to process: replaces a stale/plain .lrc with the synced result.
         val info = matchAndSaveSong(song, settings, context, matcher, songConfig, correctMetadata, overwriteExisting = true, saveLrc = saveLrc, embedLyrics = embedLyrics, addUnsyncedFallback = addUnsyncedFallback(), onMetadataCorrected = onMetadataCorrected, onPlainAvailable = onPlainAvailable)
@@ -479,22 +482,26 @@ suspend fun matchAndSaveSong(
     // than give up we try the next hit/provider.
     var chosen: ScoredHit? = null
     var lyrics: String? = null
+    // A hit whose artist agrees with none of our guesses survived only on the exact-runtime escape ("200" by
+    // Tveth landing on Ourmoney's "200", "Check" by The Boy on WAV3POP's "CHECK" — the lengths coincided).
+    // Batch saves unattended, so a runtime coincidence alone is NOT enough anymore: the file's cover art must
+    // positively confirm the hit's artist, otherwise the hit is treated as an impostor and skipped. The
+    // single-song screen keeps the escape (the user sees the result and judges it).
+    suspend fun confirmedByCover(resultArtist: String?): Boolean {
+        if (!artistDisagreesWithAllGuesses(artistGuesses, resultArtist)) return true
+        if (!discoveryRan) {
+            discoveryRan = true
+            discovered = runCatching {
+                CoverIdentity.discover(context, song.filePath, candidates.map { it.asSearchString() }, local.durationSec)
+            }.getOrNull()
+        }
+        val idArtist = discovered?.artist ?: return false
+        return TextMatch.similarity(idArtist, resultArtist) >= 0.50
+    }
+
     for (hit in nonRejected) {
         coroutineContext.ensureActive()
-        // A hit whose artist agrees with none of our guesses survived only on the exact-runtime escape
-        // ("Check" by The Boy landing on WAV3POP's "CHECK" because the lengths coincided). Before trusting
-        // it, ask the cover art for a second opinion: if the file's own art identifies a DIFFERENT artist,
-        // the hit is an impostor — skip it. No art / no identification keeps the existing behaviour.
-        if (artistDisagreesWithAllGuesses(artistGuesses, hit.result.artist)) {
-            if (!discoveryRan) {
-                discoveryRan = true
-                discovered = runCatching {
-                    CoverIdentity.discover(context, song.filePath, candidates.map { it.asSearchString() }, local.durationSec)
-                }.getOrNull()
-            }
-            val idArtist = discovered?.artist
-            if (idArtist != null && TextMatch.similarity(idArtist, hit.result.artist) < 0.50) continue
-        }
+        if (!confirmedByCover(hit.result.artist)) continue
         val l = runCatching { matcher.fetchLyrics(hit, config) }.getOrNull()
         if (!l.isNullOrBlank()) { chosen = hit; lyrics = l; break }
     }
@@ -510,6 +517,9 @@ suspend fun matchAndSaveSong(
         rescued = runCatching {
             matcher.lastResort(local, candidates, config, coverBonus = CoverArtCompare.bonusFor(context, song.filePath))
         }.getOrNull()?.takeIf { it.synced }
+        // The same impostor guard applies to rescues: a canonicalized identity whose artist agrees with none
+        // of the file's readings must be confirmed by the cover before batch saves it unattended.
+        if (rescued != null && !confirmedByCover(rescued.artist)) rescued = null
     }
     if (rescued != null) {
         val songInfo = SongInfo(songName = rescued.title, artistName = rescued.artist)
@@ -534,7 +544,7 @@ suspend fun matchAndSaveSong(
         // "N unsynced available" and let the user add them all with one tap later.
         if (addUnsyncedFallback || onPlainAvailable != null) {
             val plain = runCatching { matcher.fetchPlainLyrics(local, candidates, config) }.getOrNull()
-            val plainBody = plain?.plainLyrics
+            val plainBody = plain?.plainLyrics?.takeIf { confirmedByCover(plain.result.artist) }
             if (plainBody != null) {
                 val pTitle = plain.result.title
                 val pArtist = plain.result.artist
