@@ -101,12 +101,27 @@ private const val OFFSET_RANGE_MS = 10000f
 
 private val timestamp = Regex("""\[(\d{1,2}):(\d{2})[.:](\d{1,3})]""")
 
+/** Enhanced-LRC word timestamps ("<00:40.490>word") — line-level display must not show them as text. */
+private val wordTimestamp = Regex("""<(\d{1,2}):(\d{2})[.:](\d{1,3})>""")
+
 private fun parseSyncedLrc(raw: String): List<LyricLine> {
     val out = ArrayList<LyricLine>()
     for (line in raw.lineSequence()) {
         val matches = timestamp.findAll(line).toList()
-        if (matches.isEmpty()) continue
-        val text = line.substring(matches.last().range.last + 1).trim()
+        if (matches.isEmpty()) {
+            // Word-by-word files may carry ONLY inline "<mm:ss.xx>" stamps on a line: use the first as the
+            // line time so these files still play instead of parsing to nothing.
+            val word = wordTimestamp.find(line) ?: continue
+            val (mm, ss, frac) = word.destructured
+            val ms = mm.toLong() * 60_000 + ss.toLong() * 1_000 + (frac.padEnd(3, '0').take(3)).toLong()
+            val text = wordTimestamp.replace(line, " ").replace(Regex("""\s+"""), " ").trim()
+            out.add(LyricLine(ms, text))
+            continue
+        }
+        // Strip inline word stamps from the display text — they belong to the timing model, not the lyrics
+        // (they were being shown raw: "<00:40.490>I <00:40.666>was ...").
+        val text = wordTimestamp.replace(line.substring(matches.last().range.last + 1), "")
+            .replace(Regex("""\s+"""), " ").trim()
         for (m in matches) {
             val (mm, ss, frac) = m.destructured
             val ms = mm.toLong() * 60_000 + ss.toLong() * 1_000 +
@@ -307,7 +322,10 @@ fun SyncedLyricsPlayerScreen(
     val listState = rememberLazyListState()
     // derivedStateOf: the lyric list recomposes only when the highlighted line actually changes, NOT on every
     // 120ms position poll. That per-poll recomposition of every visible line was the source of the scroll jank.
-    val currentIndex by remember {
+    // MUST be keyed on `lines`: when opening from Home the lyrics load asynchronously, and an unkeyed remember
+    // captured the initial EMPTY list forever — the highlight (and therefore the auto-scroll) stayed frozen on
+    // the first line for the entire song.
+    val currentIndex by remember(lines) {
         derivedStateOf {
             if (lines.isEmpty()) 0
             // Lyrics are neutral, so the slider value is the effective absolute offset applied to the preview.

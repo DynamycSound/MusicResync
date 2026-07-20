@@ -70,6 +70,26 @@ class MessyNameRecoveryTest {
     }
 
     @Test
+    fun `quoted titles are searchable`() {
+        // 'Summer Cem - "TMM TMM" (official 4K)': the quotes defeated provider search even though LRCLib has
+        // the song synced under "TMM TMM".
+        val cands = FilenameParser.candidates("Summer Cem - “TMM TMM” (official 4K)", "BangerChannel", null)
+        assertTrue(
+            "no clean TMM TMM candidate in: ${cands.map { "${it.artist} / ${it.title}" }}",
+            cands.any { it.title.equals("TMM TMM", true) && it.artist.equals("Summer Cem", true) },
+        )
+    }
+
+    @Test
+    fun `Cyrillic artists compare as their Latin transliteration`() {
+        // "Секси" IS "Seksi" — a Cyrillic-indexed provider entry must not look like a stranger...
+        assertTrue(TextMatch.similarity("Секси", "Seksi") > 0.9)
+        assertFalse(artistDisagreesWithAllGuesses(listOf("Seksi"), "Секси"))
+        // ...while a genuinely different Cyrillic act still disagrees ("200" by Tveth/Sevnz/Лора vs Ourmoney).
+        assertTrue(artistDisagreesWithAllGuesses(listOf("Ourmoney - Topic", "Ourmoney"), "Tveth, Sevnz, Лора"))
+    }
+
+    @Test
     fun `no artist anywhere means no guesses and no veto`() {
         // "Bounce" / Unknown: identification is the cover's job — text alone must neither guess nor veto.
         val local = LocalTrack("Bounce", null, 139.0)

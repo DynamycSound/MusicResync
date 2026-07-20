@@ -147,6 +147,14 @@ fun BatchOptionsScreen(
 
             SettingsHeadLabel(label = stringResource(R.string.batch_options_general))
 
+            // Fast mode leads the list: same providers, same matching guards, tighter time budgets — the
+            // recommended default for every batch run.
+            SwitchItem(
+                label = stringResource(R.string.fast_mode) + "  •  " + stringResource(R.string.recommended),
+                description = stringResource(R.string.batch_fast_mode_desc),
+                selected = settings.batchFastMode,
+            ) { settings.updateBatchFastMode(!settings.batchFastMode) }
+
             SwitchItem(
                 label = stringResource(R.string.skip_existing_lyrics),
                 description = stringResource(R.string.skip_existing_lyrics_desc),

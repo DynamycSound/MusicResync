@@ -83,6 +83,9 @@ object TextMatch {
         s = noiseBrackets.replace(s, " ")
         s = leadingTrackNo.replace(s, "")
         s = garbledChars.replace(s, " ")
+        // Double quotes around a title ('Summer Cem - "TMM TMM"') defeat provider search — drop them.
+        // Apostrophes are kept: they are part of words ("don't").
+        s = s.replace(Regex("""["“”„«»]"""), " ")
         s = s.replace('_', ' ')
         s = s.replace(Regex("""[\s]+"""), " ").trim()
         // Drop dangling separators/brackets left behind by removals.
@@ -90,10 +93,28 @@ object TextMatch {
         return s.trim()
     }
 
+    /**
+     * Serbian/Russian Cyrillic -> Latin, aligned with what the accent-strip does to Latin diacritics
+     * (ж->z like ž->z, ш->s like š->s), so "Секси" compares equal to "Seksi" and a Cyrillic-indexed
+     * provider entry stops looking like a stranger to a Latin-tagged file.
+     */
+    private val cyrillicMap = mapOf(
+        'а' to "a", 'б' to "b", 'в' to "v", 'г' to "g", 'д' to "d", 'ђ' to "dj", 'е' to "e", 'ё' to "e",
+        'ж' to "z", 'з' to "z", 'и' to "i", 'й' to "j", 'ј' to "j", 'к' to "k", 'л' to "l", 'љ' to "lj",
+        'м' to "m", 'н' to "n", 'њ' to "nj", 'о' to "o", 'п' to "p", 'р' to "r", 'с' to "s", 'т' to "t",
+        'ћ' to "c", 'у' to "u", 'ф' to "f", 'х' to "h", 'ц' to "c", 'ч' to "c", 'џ' to "dz", 'ш' to "s",
+        'щ' to "sh", 'ъ' to "", 'ы' to "y", 'ь' to "", 'э' to "e", 'ю' to "ju", 'я' to "ja",
+    )
+
+    private fun transliterateCyrillic(s: String): String =
+        if (s.none { it in 'Ѐ'..'ӿ' }) s
+        else buildString { for (c in s) append(cyrillicMap[c] ?: c.toString()) }
+
     /** Aggressive normalization used only for *comparison* (not for display or queries). */
     fun normalizeForCompare(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
         var s = raw.lowercase(Locale.ROOT)
+        s = transliterateCyrillic(s)
         s = noiseBrackets.replace(s, " ")
         s = s.replace('_', ' ')
         s = featRegex.replace(s, " ")

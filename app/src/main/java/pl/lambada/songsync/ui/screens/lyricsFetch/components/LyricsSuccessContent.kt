@@ -48,7 +48,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import pl.lambada.songsync.R
 
-private val lrcTag = Regex("""\[[^]]*]""")
+// Line tags "[...]" AND enhanced-LRC word stamps "<00:40.49>" — neither belongs in a text preview.
+private val lrcTag = Regex("""\[[^]]*]|<\d{1,2}:\d{2}[.:]\d{1,3}>""")
 
 /**
  * Result-screen lyric panel. The heavy lifting (play-along preview + offset correction) now lives in the
