@@ -282,6 +282,13 @@
     <string name="spotify_secrets_refresh">Refresh</string>
     <string name="spotify_secrets_refreshing">Refreshing…</string>
 
+    <!-- Fast mode (Settings) -->
+    <string name="fast_mode">Fast matching</string>
+    <string name="fast_mode_desc">When searching a single song, race only the top two providers with a short timeout. Faster answers, but may find fewer songs than the full search.</string>
+
+    <!-- Lyrics preview -->
+    <string name="no_lyrics_in_file">No lyrics found in this file</string>
+
     <!-- Provider fallback order (Settings) -->
     <string name="provider_order">Provider order</string>
     <string name="provider_order_desc">Providers are tried one by one, from top to bottom, until lyrics are found. Uncheck a provider to skip it.</string>

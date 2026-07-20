@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,6 +74,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import pl.lambada.songsync.R
 import pl.lambada.songsync.ui.screens.lyricsFetch.components.ThumbnailPickerDialog
+import pl.lambada.songsync.util.EmbeddedLyrics
 import pl.lambada.songsync.util.applyOffsetToLyrics
 import pl.lambada.songsync.util.buildNeutralLrc
 import pl.lambada.songsync.util.embedCoverInFile
@@ -143,22 +145,31 @@ fun SyncedLyricsPlayerScreen(
     var menuExpanded by remember { mutableStateOf(false) }
     var showThumbnailPicker by remember { mutableStateOf(false) }
     var hasCover by remember(filePath) { mutableStateOf<Boolean?>(null) }
-    var lrcText by remember(filePath) {
-        mutableStateOf(
-            initialLyrics?.takeIf { it.isNotBlank() } ?: runCatching {
-                File(filePath.substringBeforeLast('.') + ".lrc").takeIf { it.exists() }?.readText()
-            }.getOrNull().orEmpty()
-        )
+    // Null while still loading from disk. The sidecar .lrc is tried first, then lyrics EMBEDDED in the audio
+    // tags (issue #11: embedded-only songs opened this player and it said "no lyrics" because only the sidecar
+    // was ever read). The TagLib read is real I/O, so it happens off the main thread with a loading state.
+    var lrcText by remember(filePath) { mutableStateOf(initialLyrics?.takeIf { it.isNotBlank() }) }
+    LaunchedEffect(filePath) {
+        if (lrcText == null) {
+            lrcText = withContext(Dispatchers.IO) {
+                runCatching {
+                    File(filePath.substringBeforeLast('.') + ".lrc").takeIf { it.exists() }?.readText()
+                }.getOrNull()
+                    ?: runCatching { EmbeddedLyrics.read(filePath) }.getOrNull()
+                    ?: ""
+            }
+        }
     }
+    val lyricsLoaded = lrcText != null
     // Reconcile the two timing models into one neutral form (zero applied offset, no [offset:] tag) so all the
     // preview/seek/save math can treat the user's offset as a single absolute value. A file in tag mode carries
     // [offset:N]; a direct-shifted file has the offset baked into its timestamps and we undo it here.
-    val fileOffsetMs = remember(lrcText) { parseOffsetTagMs(lrcText) }
+    val fileOffsetMs = remember(lrcText) { parseOffsetTagMs(lrcText.orEmpty()) }
     val cachedOffsetMs = remember(filePath) { SongCache.get(filePath)?.offsetMs ?: 0 }
     val fileUsesOffsetTag = fileOffsetMs != 0
     val baseAppliedOffsetMs = if (fileUsesOffsetTag) fileOffsetMs else cachedOffsetMs
     val neutralLrc = remember(lrcText, baseAppliedOffsetMs, fileUsesOffsetTag) {
-        buildNeutralLrc(lrcText, baseAppliedOffsetMs, fileUsesOffsetTag)
+        buildNeutralLrc(lrcText.orEmpty(), baseAppliedOffsetMs, fileUsesOffsetTag)
     }
     val lines = remember(neutralLrc) { parseSyncedLrc(neutralLrc) }
 
@@ -400,7 +411,9 @@ fun SyncedLyricsPlayerScreen(
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                if (lines.isEmpty()) {
+                if (!lyricsLoaded) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                } else if (lines.isEmpty()) {
                     Text(
                         "No synced lyrics found for this song.",
                         modifier = Modifier.align(Alignment.Center).padding(24.dp),

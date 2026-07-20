@@ -26,6 +26,7 @@ import pl.lambada.songsync.ui.screens.settings.components.AppInfoSection
 import pl.lambada.songsync.ui.screens.settings.components.ContributorsSection
 import pl.lambada.songsync.ui.screens.settings.components.CreditsSection
 import pl.lambada.songsync.ui.screens.settings.components.ExternalLinkSection
+import pl.lambada.songsync.ui.screens.settings.components.FastModeSwitch
 import pl.lambada.songsync.ui.screens.settings.components.MarqueeSwitch
 import pl.lambada.songsync.ui.screens.settings.components.MultiPersonSwitch
 import pl.lambada.songsync.ui.screens.settings.components.ProviderOrderSection
@@ -102,6 +103,12 @@ fun SettingsScreen(
                 OffsetModeSwitch(
                     selected = userSettingsController.directlyModifyTimestamps,
                     onToggle = { userSettingsController.updateDirectlyModifyTimestamps(it) }
+                )
+            }
+            item {
+                FastModeSwitch(
+                    selected = userSettingsController.singleFastMode,
+                    onToggle = { userSettingsController.updateSingleFastMode(it) }
                 )
             }
             item { SpotifySecretsStatus() }

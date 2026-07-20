@@ -26,17 +26,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import pl.lambada.songsync.R
-import pl.lambada.songsync.util.Providers
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeAppBar(
     showing: Boolean,
     scrollBehavior: TopAppBarScrollBehavior,
-    selectedProvider: Providers,
     onSelectedClearAction: () -> Unit,
     onNavigateToSettingsSectionRequest: () -> Unit,
-    onProviderSelectRequest: (Providers) -> Unit,
     onBatchDownloadRequest: () -> Unit,
     onSelectAllSongsRequest: () -> Unit,
     onInvertSongSelectionRequest: () -> Unit,
@@ -119,9 +116,6 @@ fun HomeAppBar(
             } else {
                 HomeTopAppBarDropDown(
                     onNavigateToSettingsSectionRequest = onNavigateToSettingsSectionRequest,
-                    selectedProvider = selectedProvider,
-                    onProviderSelectRequest = onProviderSelectRequest,
-                    onBatchDownloadRequest = onBatchDownloadRequest,
                 )
             }
         },

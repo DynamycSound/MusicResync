@@ -725,9 +725,14 @@ private fun resultLabel(state: LyricState): String = stringResource(state.label)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LyricsPreviewSheet(song: Song, onDismiss: () -> Unit) {
+    // null = still loading, "" = looked everywhere and found nothing. The old code left the value null when no
+    // .lrc existed (e.g. embed-only batch runs), so the sheet showed an infinite spinner (issue #11) — now it
+    // also reads lyrics embedded in the audio tags and always resolves to a terminal state.
     val lyrics by produceState<String?>(initialValue = null, song.filePath) {
         value = withContext(Dispatchers.IO) {
             runCatching { song.filePath?.toLrcFile()?.takeIf { it.exists() }?.readText() }.getOrNull()
+                ?: song.filePath?.let { runCatching { pl.lambada.songsync.util.EmbeddedLyrics.read(it) }.getOrNull() }
+                ?: ""
         }
     }
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -752,7 +757,7 @@ private fun LyricsPreviewSheet(song: Song, onDismiss: () -> Unit) {
                     CircularProgressIndicator()
                 }
                 else -> Text(
-                    text = text.ifBlank { stringResource(R.string.no_lyrics_only) },
+                    text = text.ifBlank { stringResource(R.string.no_lyrics_in_file) },
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

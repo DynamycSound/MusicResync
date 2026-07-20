@@ -29,6 +29,7 @@ import pl.lambada.songsync.util.matching.LrcPrescan
 import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.matching.MatchTier
 import pl.lambada.songsync.util.matching.SongMatchInfo
+import pl.lambada.songsync.util.matching.TextMatch
 import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.io.FileNotFoundException
@@ -425,7 +426,9 @@ suspend fun matchAndSaveSong(
 
     val local = LocalTrack(
         title = song.title,
-        artist = song.artist,
+        // Placeholder artists ("Unknown", …) are noise, not evidence — with one in place the scorer sees a
+        // "disagreeing" artist on every correct hit and rejects it.
+        artist = song.artist?.takeIf { !TextMatch.isJunkArtist(it) },
         durationSec = song.durationMs?.let { it / 1000.0 },
         album = song.album,
     )
@@ -446,6 +449,9 @@ suspend fun matchAndSaveSong(
     val topForReport = hits.firstOrNull()
     val nonRejected = hits.filter { it.tier != MatchTier.REJECT }
 
+    // Providers that produced at least one believable synced hit — even a non-winning one is not a "failure".
+    val providersWithLyrics = nonRejected.filter { it.result.hasSyncedLyrics }.map { it.provider }.toSet()
+
     // Fall through every acceptable hit (highest confidence first) until one actually yields synced lyrics. A
     // provider can match the metadata yet have no synced body ("found a match but no synced lyrics"); rather
     // than give up we try the next hit/provider.
@@ -457,10 +463,36 @@ suspend fun matchAndSaveSong(
         if (!l.isNullOrBlank()) { chosen = hit; lyrics = l; break }
     }
 
-    // No synced lyrics from the normal providers. The old last-resort lyrics rescue is intentionally disabled:
-    // for some messy files it still produced a different song by the same artist, and for lyrics it's better to
-    // fail honestly than silently save the wrong words. We only offer a plain LRCLib fallback when explicitly
-    // enabled by the user.
+    // No synced lyrics from the normal providers: run the same last-resort rescue the single-song screen uses
+    // (canonicalize the messy name via iTunes/Deezer, re-query LRCLib under the clean identity). This is what
+    // made "it finds it when I open the song, but not in batch" true — the batch never had this path. The
+    // rescue is validated by the scorer-based gates in selectBestRescue (plus the additive-only album-art
+    // bonus), and a rescued match is always saved as REVIEW, never silently auto-accepted.
+    var rescued: SmartLyricsMatcher.LastResortHit? = null
+    if (chosen == null || lyrics == null) {
+        coroutineContext.ensureActive()
+        rescued = runCatching {
+            matcher.lastResort(local, candidates, config, coverBonus = CoverArtCompare.bonusFor(context, song.filePath))
+        }.getOrNull()?.takeIf { it.synced }
+    }
+    if (rescued != null) {
+        val songInfo = SongInfo(songName = rescued.title, artistName = rescued.artist)
+        val lrcContent = formatLyrics(songInfo, rescued.lyrics, context, settings.directlyModifyTimestamps)
+        val saved = runCatching {
+            persistLyrics(context, song, lrcFile, lrcContent, saveLrc, embedLyrics, settings.sdCardPath)
+        }.getOrDefault(false)
+        if (saved) return SongMatchInfo(
+            LyricState.REVIEW,
+            confidencePercent = topForReport?.confidence?.percent(),
+            provider = Providers.LRCLIB,
+            matchedTitle = rescued.title,
+            matchedArtist = rescued.artist,
+            failedProviders = (attempted - Providers.LRCLIB - providersWithLyrics).toList(),
+        )
+    }
+
+    // Still nothing. We only offer a plain LRCLib fallback when explicitly enabled by the user — for lyrics
+    // it's better to fail honestly than silently save the wrong words.
     if (chosen == null || lyrics == null) {
         // Probe for plain (unsynced) lyrics even when the fallback toggle is off, so the batch can report
         // "N unsynced available" and let the user add them all with one tap later.
@@ -501,8 +533,9 @@ suspend fun matchAndSaveSong(
     val songInfo = SongInfo(songName = best.result.title, artistName = best.result.artist)
     val lrcContent = formatLyrics(songInfo, lyrics, context, settings.directlyModifyTimestamps)
 
-    // Providers that were tried before the winning one and produced nothing usable for this song.
-    val failedForSong = (attempted - best.provider).toList()
+    // Providers that were tried for this song and produced nothing usable — NOT the winner, and not the ones
+    // that also had a believable synced hit (they'd have worked too; painting them as failed misleads).
+    val failedForSong = (attempted - best.provider - providersWithLyrics).toList()
 
     // Independent choices: write a sidecar .lrc and/or embed into the file. Default saves the .lrc. Honour the
     // embed boolean: a failed embed (no exception) must still count as a failure when it was the only target.

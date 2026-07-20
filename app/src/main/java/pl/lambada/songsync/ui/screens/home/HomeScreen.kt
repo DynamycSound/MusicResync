@@ -122,10 +122,8 @@ fun HomeScreen(
                     scrollBehavior = scrollBehavior,
                     onSelectedClearAction = viewModel.selectedSongs::clear,
                     onNavigateToSettingsSectionRequest = { navController.navigate(ScreenSettings) },
-                    onProviderSelectRequest = viewModel.userSettingsController::updateSelectedProviders,
                     // The batch setup is a full page now (like the progress view), not a popup.
                     onBatchDownloadRequest = { navController.navigate(pl.lambada.songsync.ui.ScreenBatchOptions) },
-                    selectedProvider = viewModel.userSettingsController.selectedProvider,
                     onSelectAllSongsRequest = viewModel::selectAllDisplayingSongs,
                     onInvertSongSelectionRequest = viewModel::invertSongSelection,
                     cachedSize = cachedSize

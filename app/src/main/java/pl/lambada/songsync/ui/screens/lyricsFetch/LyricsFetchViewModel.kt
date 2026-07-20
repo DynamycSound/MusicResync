@@ -28,7 +28,9 @@ import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.matching.MatchStrategy
 import pl.lambada.songsync.util.matching.MatchTier
 import pl.lambada.songsync.util.matching.QueryCandidate
+import pl.lambada.songsync.util.matching.TextMatch
 import com.kyant.taglib.TagLib
+import pl.lambada.songsync.util.CoverArtCompare
 import pl.lambada.songsync.util.embedCoverInFile
 import pl.lambada.songsync.util.embedLyricsInFile
 import pl.lambada.songsync.util.ext.getVersion
@@ -117,7 +119,11 @@ class LyricsFetchViewModel(
                 // what makes a junk tag like "Kendrick Lamar - HUMBLE. / KendrickLamarVEVO" actually resolve,
                 // and stops a wrong "first result" (e.g. a random remix) from being accepted.
                 val durationSec = source?.filePath?.let { readDurationSeconds(context, it) }
-                val local = LocalTrack(querySongName, queryArtistName, durationSec)
+                val local = LocalTrack(
+                    querySongName,
+                    queryArtistName.takeIf { !TextMatch.isJunkArtist(it) },
+                    durationSec,
+                )
                 val candidates = FilenameParser.candidates(querySongName, queryArtistName, source?.filePath)
                     .ifEmpty { listOf(QueryCandidate(querySongName, queryArtistName ?: "", MatchStrategy.TAGS)) }
 
@@ -127,12 +133,16 @@ class LyricsFetchViewModel(
                 val order = (listOf(userSettingsController.selectedProvider) +
                         userSettingsController.enabledProviderOrder).distinct()
 
+                // Fast mode (Settings): race only the top providers with a short budget instead of the full chain.
+                val fastMode = userSettingsController.singleFastMode
+                val config = if (fastMode) MatchConfig.fast(order) else MatchConfig(providerOrder = order)
+
                 // Track which providers the search actually reached. All providers now run in parallel, but the
                 // auto-accept early stop can still cancel slower ones mid-flight — those are genuinely UNTRIED,
                 // not failures, and must not be painted with a red X.
                 val attempted = linkedSetOf<Providers>()
                 val hits = matcher.search(
-                    local, candidates, MatchConfig(providerOrder = order),
+                    local, candidates, config,
                     onAttempt = { provider -> attempted.add(provider); providerProbes[provider] = ProviderProbe.LOADING },
                     onSkipped = { provider -> attempted.remove(provider) },
                 )
@@ -148,12 +158,16 @@ class LyricsFetchViewModel(
                     if (!l.isNullOrBlank()) { chosen = hit; lyrics = l; break }
                 }
 
-                // Record per-provider probe outcomes for the cloud-icon dropdown: the winner is HAS_SYNCED,
-                // providers we actually reached but that had nothing are NONE, and everything past the early stop
-                // stays UNTRIED instead of being mislabelled as failed.
+                // Providers that produced a believable synced hit — even non-winning ones "found lyrics"; only
+                // painting them with a red X (as before) claimed they had nothing when they were simply outranked.
+                val providersWithSynced = ranked.filter { it.result.hasSyncedLyrics }.map { it.provider }.toSet()
+
+                // Record per-provider probe outcomes for the cloud-icon dropdown: whoever had a believable synced
+                // hit is HAS_SYNCED, providers we actually reached but that had nothing are NONE, and everything
+                // past the early stop stays UNTRIED instead of being mislabelled as failed.
                 order.forEach { p ->
                     providerProbes[p] = when {
-                        p == chosen?.provider -> ProviderProbe.HAS_SYNCED
+                        p == chosen?.provider || p in providersWithSynced -> ProviderProbe.HAS_SYNCED
                         p in attempted -> ProviderProbe.NONE
                         else -> ProviderProbe.UNTRIED
                     }
@@ -161,7 +175,10 @@ class LyricsFetchViewModel(
 
                 if (chosen != null && lyrics != null) {
                     activeProvider = chosen.provider
-                    rememberProviders(chosen.provider, order.filter { it != chosen.provider })
+                    rememberProviders(
+                        chosen.provider,
+                        attempted.filter { it != chosen.provider && it !in providersWithSynced },
+                    )
                     queryState = QueryStatus.Success(
                         SongInfo(songName = chosen.result.title, artistName = chosen.result.artist)
                     )
@@ -171,20 +188,27 @@ class LyricsFetchViewModel(
 
                 // Last resort: canonicalize a messy filename via iTunes/Deezer and retry LRCLib under the clean
                 // name. This path is only allowed to succeed when the rescue still clears the scorer-based gates;
-                // otherwise we fail honestly instead of silently substituting a different song.
-                val lr = runCatching { matcher.lastResort(local, candidates) }.getOrNull()
+                // otherwise we fail honestly instead of silently substituting a different song. A matching local
+                // album thumbnail adds (never subtracts) confidence to a rescue candidate.
+                val lr = runCatching {
+                    matcher.lastResort(
+                        local, candidates, config,
+                        coverBonus = CoverArtCompare.bonusFor(context, cachePath),
+                    )
+                }.getOrNull()
                 if (lr != null && lr.synced) {
                     activeProvider = Providers.LRCLIB
                     providerProbes[Providers.LRCLIB] = ProviderProbe.HAS_SYNCED
-                    rememberProviders(Providers.LRCLIB, order.filter { it != Providers.LRCLIB })
+                    rememberProviders(Providers.LRCLIB, attempted.filter { it != Providers.LRCLIB && it !in providersWithSynced })
                     queryState = QueryStatus.Success(SongInfo(songName = lr.title, artistName = lr.artist, albumCoverLink = lr.coverUrl))
                     lyricsFetchState = LyricsFetchState.Success(lr.lyrics)
                     return@launch
                 }
 
-                // No synced lyrics anywhere -> offer plain (LRCLib first, then the last-resort's plain body) instead of erroring.
-                rememberProviders(null, order)
-                val plain = runCatching { matcher.fetchPlainLyrics(local, candidates) }.getOrNull()
+                // No synced lyrics anywhere -> offer plain (LRCLib first, then the last-resort's plain body)
+                // instead of erroring. Only providers we actually reached are remembered as failed.
+                rememberProviders(null, attempted.toList())
+                val plain = runCatching { matcher.fetchPlainLyrics(local, candidates, config) }.getOrNull()
                 val plainLyrics = plain?.plainLyrics ?: lr?.takeUnless { it.synced }?.lyrics
                 queryState = QueryStatus.SyncedNotFound(
                     song = SongInfo(

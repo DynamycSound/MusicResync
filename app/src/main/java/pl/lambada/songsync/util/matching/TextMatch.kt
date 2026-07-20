@@ -28,6 +28,25 @@ object TextMatch {
     /** "feat. X", "ft. X", "featuring X" up to a closing bracket or end. Captured group 1 = the featured names. */
     val featRegex = Regex("""[\s(\[]*(?:feat\.?|ft\.?|featuring)\s+([^()\[\]]+?)\s*[)\]]?$""", RegexOption.IGNORE_CASE)
 
+    /**
+     * A bracketed feat clause ANYWHERE in the string — "Harli Kvin (feat. AV47) 420" keeps trailing junk after
+     * the clause, which the end-anchored [featRegex] can't reach. Captured group 1 = the featured names.
+     */
+    val parenFeatRegex = Regex("""[(\[]\s*(?:feat\.?|ft\.?|featuring)\s+([^()\[\]]+?)\s*[)\]]""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Placeholder "artist" values MediaStore/rippers write when the real artist is unknown. Treating these as a
+     * genuine artist poisons both the query and the scorer (a result by the real artist "disagrees" with
+     * "Unknown" and gets rejected), so callers null them out before matching.
+     */
+    private val junkArtists = setOf(
+        "unknown", "unknown artist", "<unknown>", "various artists", "va", "n/a", "not available", "artist",
+    )
+
+    /** True when [raw] is a placeholder rather than a real artist name ("Unknown", "<unknown>", …). */
+    fun isJunkArtist(raw: String?): Boolean =
+        raw.isNullOrBlank() || raw.trim().lowercase(Locale.ROOT) in junkArtists
+
     /** Leading track number like "07.", "05 - ", "1) ", "12_". */
     private val leadingTrackNo = Regex("""^\s*\d{1,2}\s*[.)\-_]\s*""")
 
