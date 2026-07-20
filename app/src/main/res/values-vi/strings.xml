@@ -14,9 +14,9 @@
     <string name="unknown">Không xác định</string>
     <string name="app_version">Phiên bản ứng dụng: %1$s</string>
     <string name="spotify_for_developers">Spotify dành cho Nhà phát triển</string>
-    <string name="about_songsync">Về SongSync</string>
+    <string name="about_songsync">Về MusicResync</string>
     <string name="view_on_github">Xem trên GitHub</string>
-    <string name="we_are_open_source">SongSync là một dự án mã nguồn mở. Bạn có thể tìm mã nguồn trên GitHub.</string>
+    <string name="we_are_open_source">MusicResync là một dự án mã nguồn mở. Bạn có thể tìm mã nguồn trên GitHub.</string>
     <string name="contributors">Những người đóng góp</string>
     <string name="bugs_or_suggestions_contact_us">Tìm thấy lỗi\? Có gợi ý\? Muốn đóng góp\? Đừng ngại và hãy liên hệ với tôi trên nhóm Telegram.</string>
     <string name="source_code">Mã nguồn</string>
@@ -71,9 +71,9 @@
     <string name="success_failed">Thành công: %1$d, Không có lời: %2$d, Thất bại: %3$d</string>
     <string name="download_complete">Tải xuống thành công</string>
     <string name="no_internet_server">Không có kết nối mạng hoặc máy chủ đã bị sập</string>
-    <string name="what_is_songsync">SongSync là một ứng dụng giúp bạn tải xuống lời bài hát (tệp .lrc) cho thư viện nhạc của bạn.</string>
+    <string name="what_is_songsync">MusicResync là một ứng dụng giúp bạn tải xuống lời bài hát (tệp .lrc) cho thư viện nhạc của bạn.</string>
     <string name="extra_what_is_songsync">Bạn cũng có thể tìm kiếm một bài hát cụ thể để lấy lời bài hát (và lưu nó lại).</string>
-    <string name="how_we_get_lyrics">SongSync sử dụng API SpotifyLyrics để lấy lời của bài hát. Bạn có thể tìm hiểu thêm thông tin về API SpotifyLyrics trên trang GitHub của họ.</string>
+    <string name="how_we_get_lyrics">MusicResync sử dụng API SpotifyLyrics để lấy lời của bài hát. Bạn có thể tìm hiểu thêm thông tin về API SpotifyLyrics trên trang GitHub của họ.</string>
     <string name="telegram_group">Nhóm Telegram</string>
     <string name="create_issue">Bạn cũng có thể tạo một issue trên GitHub (liên kết ở trên).</string>
     <string name="permission_denied">Quyền truy cập bị từ chối</string>

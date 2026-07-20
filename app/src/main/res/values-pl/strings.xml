@@ -23,11 +23,11 @@
     <string name="no_results">Brak wyników</string>
     <string name="no_internet_server">Brak połączenia z internetem, lub serwer jest niedostępny</string>
     <string name="unknown">Nieznany</string>
-    <string name="what_is_songsync">SongSync to aplikacja, która pozwala na pobieranie zsynchronizowanych tekstów (pliki .lrc) do użytku w lokalnej bibliotece muzycznej.</string>
+    <string name="what_is_songsync">MusicResync to aplikacja, która pozwala na pobieranie zsynchronizowanych tekstów (pliki .lrc) do użytku w lokalnej bibliotece muzycznej.</string>
     <string name="extra_what_is_songsync">Możesz również wyszukiwać konkretne utwory, aby pobrać ich teksty (oraz zapisać w katalogu).</string>
     <string name="app_version">Wersja aplikacji: %1$s</string>
     <string name="spotify_for_developers">Spotify dla deweloperów</string>
-    <string name="about_songsync">O SongSync</string>
+    <string name="about_songsync">O MusicResync</string>
     <string name="copy_lyrics_to_clipboard">Kopiuj tekst do schowka</string>
     <string name="local_song">Utwór lokalny</string>
     <string name="cloud_song">Utwór z chmury</string>
@@ -90,7 +90,7 @@
     <string name="show_notification_permission">Pokaż powiadomienie (Opcjonalne)</string>
     <string name="show_notification_description">Pokaż powiadomienie postępu pobierania</string>
     <string name="_continue">Kontynuuj</string>
-    <string name="init_screen_title">Witaj w SongSync!</string>
+    <string name="init_screen_title">Witaj w MusicResync!</string>
     <string name="init_screen_description">Aby rozpocząć, proszę, zezwól na wymagane uprawnienia:</string>
     <string name="now_playing_song">Teraz odtwarzany utwór</string>
     <string name="notification_access">Dostęp do powiadomień (Opcjonalne)</string>
@@ -103,9 +103,9 @@
         <item quantity="many">%1$d utworów</item>
         <item quantity="other">%1$d utworów</item>
     </plurals>
-    <string name="how_we_get_lyrics">SongSync używa SpotifyLyrics API, żeby pobierać teksty utworów. Aby dowiedzieć się więcej o SpotifyLyrics API odwiedź stronę na GitHub\'ie.</string>
+    <string name="how_we_get_lyrics">MusicResync używa SpotifyLyrics API, żeby pobierać teksty utworów. Aby dowiedzieć się więcej o SpotifyLyrics API odwiedź stronę na GitHub\'ie.</string>
     <string name="view_on_github">Odwiedź stronę na GitHub\'ie</string>
-    <string name="we_are_open_source">SongSync to projekt otwartoźródłowy. Możesz zobaczyć jego kod na GitHub\'ie.</string>
+    <string name="we_are_open_source">MusicResync to projekt otwartoźródłowy. Możesz zobaczyć jego kod na GitHub\'ie.</string>
     <string name="contributors">Współtwórcy</string>
     <string name="bugs_or_suggestions_contact_us">Znalazłeś błąd? Masz sugestię? Chcesz współtworzyć? Zapraszam do kontaktu na grupie Telegram.</string>
     <string name="telegram_group">Grupa Telegram</string>

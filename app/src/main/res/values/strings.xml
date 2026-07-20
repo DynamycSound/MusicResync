@@ -62,16 +62,16 @@
     <string name="no_results">No results</string>
     <string name="no_internet_server">No internet connection or server is down</string>
     <string name="unknown">Unknown</string>
-    <string name="generated_using" translatable="false">Generated using SongSync</string>
-    <string name="what_is_songsync">SongSync is an app that lets you to download synced lyrics (.lrc files) for your local music library.</string>
+    <string name="generated_using" translatable="false">Generated using MusicResync</string>
+    <string name="what_is_songsync">MusicResync is an app that lets you to download synced lyrics (.lrc files) for your local music library.</string>
     <string name="extra_what_is_songsync">You can also search for specific songs to get their lyrics (and save them to downloads).</string>
     <string name="app_version">App version: %1$s</string>
     <string name="spotify_for_developers">Spotify for Developers</string>
     <string name="spotifylyrics_api" translatable="false">SpotifyLyrics API</string>
-    <string name="about_songsync">About SongSync</string>
-    <string name="how_we_get_lyrics">SongSync uses SpotifyLyrics API to get lyrics for songs. You can find more information about SpotifyLyrics API on their GitHub page.</string>
+    <string name="about_songsync">About MusicResync</string>
+    <string name="how_we_get_lyrics">MusicResync uses SpotifyLyrics API to get lyrics for songs. You can find more information about SpotifyLyrics API on their GitHub page.</string>
     <string name="view_on_github">View on GitHub</string>
-    <string name="we_are_open_source">SongSync is an open-source project. You can find the source code on GitHub.</string>
+    <string name="we_are_open_source">MusicResync is an open-source project. You can find the source code on GitHub.</string>
     <string name="contributors">Contributors</string>
     <string name="github" translatable="false">GitHub</string>
     <string name="telegram" translatable="false">Telegram</string>
@@ -200,7 +200,7 @@
     <string name="show_notification_permission">Show notification (Optional)</string>
     <string name="show_notification_description">Used to show download progress notification</string>
     <string name="_continue">Continue</string>
-    <string name="init_screen_title">Welcome to SongSync!</string>
+    <string name="init_screen_title">Welcome to MusicResync!</string>
     <string name="init_screen_description">To get started, please grant the following permissions:</string>
     <string name="now_playing_song">Now playing song</string>
     <string name="notification_access">Notification access (Optional)</string>

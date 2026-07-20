@@ -17,12 +17,12 @@
     <string name="please_try_again_later">Coba lagi nanti</string>
     <string name="save_lrc_file">Simpan berkas .lrc</string>
     <string name="no_results">Tidak ada hasil</string>
-    <string name="what_is_songsync">SongSync adalah aplikasi yang memungkinkan Anda untuk mengunduh lirik yang tersinkron (berkas .lrc) bagi pustaka musik lokal milik Anda.</string>
+    <string name="what_is_songsync">MusicResync adalah aplikasi yang memungkinkan Anda untuk mengunduh lirik yang tersinkron (berkas .lrc) bagi pustaka musik lokal milik Anda.</string>
     <string name="app_version">Versi aplikasi: %1$s</string>
     <string name="spotify_for_developers">Spotify untuk Para Pengembang</string>
-    <string name="about_songsync">Tentang SongSync</string>
+    <string name="about_songsync">Tentang MusicResync</string>
     <string name="view_on_github">Lihat di GitHub</string>
-    <string name="we_are_open_source">SongSync adalah sebuah proyek sumber terbuka. Anda bisa menemukan kode sumbernya di GitHub.</string>
+    <string name="we_are_open_source">MusicResync adalah sebuah proyek sumber terbuka. Anda bisa menemukan kode sumbernya di GitHub.</string>
     <string name="contributors">Para Kontributor</string>
     <string name="bugs_or_suggestions_contact_us">Menemukan bug\? Punya saran\? Ingin berkontribusi\? Jangan segan untuk menghubungi kami di grup Telegram.</string>
     <string name="telegram_group">Grup Telegram</string>
@@ -69,7 +69,7 @@
     <string name="please_do_not_close_the_app_this_may_take_a_while">Mohon jangan menutup aplikasi, proses ini mungkin memakan waktu yang cukup lama</string>
     <string name="no_internet_server">Tidak ada koneksi internet atau server sedang tidak aktif</string>
     <string name="extra_what_is_songsync">Anda juga bisa mencari lagu spesifik untuk bisa memperoleh liriknya (dan menyimpannya ke unduhan).</string>
-    <string name="how_we_get_lyrics">SongSync menggunakan API SpotifyLyrics untuk memperoleh lirik bagi lagu. Anda bisa menemukan informasi selengkapnya tentang API SpotifyLyrics di halaman GitHub mereka.</string>
+    <string name="how_we_get_lyrics">MusicResync menggunakan API SpotifyLyrics untuk memperoleh lirik bagi lagu. Anda bisa menemukan informasi selengkapnya tentang API SpotifyLyrics di halaman GitHub mereka.</string>
     <string name="contributor">Kontributor</string>
     <string name="requires_higher_storage_permissions">Aplikasi ini membutuhkan akses penyimpanan untuk memindai pustaka musik Anda dan menyimpan lirik.</string>
     <string name="you_need_internet_connection">Anda memerlukan koneksi internet untuk menggunakan aplikasi ini.</string>
@@ -154,7 +154,7 @@
     <string name="show_notification_permission">Tampilkan notifikasi (Opsional)</string>
     <string name="show_notification_description">Digunakan untuk menampilkan notifikasi kemajuan pengunduhan</string>
     <string name="_continue">Lanjut</string>
-    <string name="init_screen_title">Selamat datang di SongSync!</string>
+    <string name="init_screen_title">Selamat datang di MusicResync!</string>
     <string name="init_screen_description">Untuk memulai, mohon izinkan perizinan berikut:</string>
     <string name="now_playing_song">Lagu yang sedang diputar</string>
     <string name="notification_access">Akses notifikasi (Opsional)</string>

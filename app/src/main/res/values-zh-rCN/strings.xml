@@ -18,12 +18,12 @@
     <string name="save_lrc_file">保存 .lrc 文件</string>
     <string name="no_results">没有结果</string>
     <string name="unknown">未知</string>
-    <string name="what_is_songsync">SongSync 是一款能够为你的本地曲库下载同步歌词 (.lrc 文件) 的应用。</string>
+    <string name="what_is_songsync">MusicResync 是一款能够为你的本地曲库下载同步歌词 (.lrc 文件) 的应用。</string>
     <string name="app_version">应用版本: %1$s</string>
     <string name="spotify_for_developers">面向开发者的 Spotify</string>
-    <string name="about_songsync">关于 SongSync</string>
+    <string name="about_songsync">关于 MusicResync</string>
     <string name="view_on_github">在 Github 上查看</string>
-    <string name="we_are_open_source">SongSync 是开源项目。你可以在 GitHub 上找到源代码。</string>
+    <string name="we_are_open_source">MusicResync 是开源项目。你可以在 GitHub 上找到源代码。</string>
     <string name="contributors">贡献者</string>
     <string name="lead_developer">主开发者</string>
     <string name="close_app">关闭应用</string>
@@ -70,7 +70,7 @@
     <string name="developer">开发者</string>
     <string name="permission_denied">权限被拒绝</string>
     <string name="requires_higher_storage_permissions">本应用需要储存权限才能扫描你的音乐库和保存歌词。</string>
-    <string name="how_we_get_lyrics">SongSync 使用 SpotifyLyrics API 来获取歌曲信息。你可以在 SpotifyLyrics 的GitHub主页上找到有关 SpotifyLyrics API 的更多信息。</string>
+    <string name="how_we_get_lyrics">MusicResync 使用 SpotifyLyrics API 来获取歌曲信息。你可以在 SpotifyLyrics 的GitHub主页上找到有关 SpotifyLyrics API 的更多信息。</string>
     <string name="bugs_or_suggestions_contact_us">出现了 bug\? 有什么建议\? 想要贡献代码\? 欢迎加入猫猫的 Telegram Group来联系 lambada 猫猫。</string>
     <string name="if_connected_spotify_down">如果你已经连接到网络了，那么 Spotify 的服务器可能正在维护。请稍候再试。</string>
     <string name="search">搜索</string>
@@ -144,7 +144,7 @@
     <string name="show_notification_description">用于显示下载进度通知</string>
     <string name="_continue">继续</string>
     <string name="all_files_access_description">如果不想每次都打开文件选择器将歌词文件保存在歌曲目录中，那么必须授予该权限</string>
-    <string name="init_screen_title">欢迎来到 SongSync！</string>
+    <string name="init_screen_title">欢迎来到 MusicResync！</string>
     <string name="init_screen_description">要开始使用，请授予以下权限：</string>
     <string name="now_playing_song">正在播放歌曲</string>
     <string name="notification_access">通知权限（可选）</string>

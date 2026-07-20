@@ -33,7 +33,7 @@ import pl.lambada.songsync.util.dataStore
 import java.io.File
 
 /**
- * The main activity of the SongSync app.
+ * The main activity of the MusicResync app.
  */
 class MainActivity : ComponentActivity() {
     private val lyricsProviderService = LyricsProviderService()

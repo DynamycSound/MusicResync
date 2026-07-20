@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets
 
 class LRCLibAPI {
     private val baseURL = "https://lrclib.net/api/"
-    private val userAgent = "MusicResync v1.0 (https://github.com/Lambada10/SongSync)"
+    private val userAgent = "MusicResync (https://github.com/DynamycSound/MusicResync)"
 
     /**
      * MusicResync: returns the *full* list of search hits (each already carries duration, album and synced

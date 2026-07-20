@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name" translatable="false">SongSync</string>
+    <string name="app_name" translatable="false">MusicResync</string>
     <string name="batch_download_lyrics">Baixar letras em lote</string>
     <string name="get_lyrics">Obter letras</string>
     <string name="try_again">Tentar novamente</string>
@@ -24,16 +24,16 @@
     <string name="no_results">Nenhum resultado</string>
     <string name="no_internet_server">Sem conexão com a internet ou o servidor está fora do ar</string>
     <string name="unknown">Desconhecido</string>
-    <string name="generated_using" translatable="false">Gerado usando SongSync</string>
-    <string name="what_is_songsync">SongSync é um aplicativo que permite baixar letras sincronizadas (.lrc) para sua biblioteca de músicas local.</string>
+    <string name="generated_using" translatable="false">Gerado usando MusicResync</string>
+    <string name="what_is_songsync">MusicResync é um aplicativo que permite baixar letras sincronizadas (.lrc) para sua biblioteca de músicas local.</string>
     <string name="extra_what_is_songsync">Você também pode pesquisar músicas específicas para obter suas letras (e salvá-las nos downloads).</string>
     <string name="app_version">Versão do aplicativo: %1$s</string>
     <string name="spotify_for_developers">Spotify para Desenvolvedores</string>
     <string name="spotifylyrics_api" translatable="false">SpotifyLyrics API</string>
-    <string name="about_songsync">Sobre o SongSync</string>
-    <string name="how_we_get_lyrics">O SongSync usa a API do SpotifyLyrics para obter letras de músicas. Você pode encontrar mais informações sobre a API do SpotifyLyrics na página do GitHub.</string>
+    <string name="about_songsync">Sobre o MusicResync</string>
+    <string name="how_we_get_lyrics">O MusicResync usa a API do SpotifyLyrics para obter letras de músicas. Você pode encontrar mais informações sobre a API do SpotifyLyrics na página do GitHub.</string>
     <string name="view_on_github">Ver no GitHub</string>
-    <string name="we_are_open_source">SongSync é um projeto de código aberto. Você pode encontrar o código-fonte no GitHub.</string>
+    <string name="we_are_open_source">MusicResync é um projeto de código aberto. Você pode encontrar o código-fonte no GitHub.</string>
     <string name="contributors">Contribuidores</string>
     <string name="github" translatable="false">GitHub</string>
     <string name="telegram" translatable="false">Telegram</string>
@@ -160,7 +160,7 @@
     <string name="show_notification_permission">Mostrar notificação (opcional)</string>
     <string name="show_notification_description">Usado para mostrar notificação de progresso do download</string>
     <string name="_continue">Continuar</string>
-    <string name="init_screen_title">Bem-vindo ao SongSync!</string>
+    <string name="init_screen_title">Bem-vindo ao MusicResync!</string>
     <string name="init_screen_description">Para começar, conceda as seguintes permissões:</string>
     <string name="now_playing_song">Música tocando agora</string>
     <string name="notification_access">Acesso à notificação (opcional)</string>

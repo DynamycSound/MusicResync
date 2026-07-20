@@ -2,8 +2,11 @@ package pl.lambada.songsync.ui.screens.player
 
 import android.media.MediaPlayer
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -88,7 +91,6 @@ import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.showToast
 import pl.lambada.songsync.util.toCrlf
 import java.io.File
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -312,20 +314,27 @@ fun SyncedLyricsPlayerScreen(
             else lines.indexOfLast { it.timeMs <= positionMs + offsetMs.roundToInt() }.coerceAtLeast(0)
         }
     }
-    // Word/line-dense lyrics were stuttering because we launched a new animateScrollToItem on *every* highlight
-    // change. Keep the current line within a comfortable window and only scroll when it leaves that window;
-    // small shifts jump immediately (no competing animations), while larger jumps still animate.
-    LaunchedEffect(currentIndex) {
+    // Karaoke-style follow: every highlight change glides the list so the active line settles just above
+    // centre. animateScrollBy restarts smoothly from wherever the list currently is (a new line simply
+    // retargets the glide), giving one continuous crawl that visibly tracks the song. The old logic only
+    // scrolled once the line left a visibility window, which read as "the player isn't following the song"
+    // and then lurched a whole window at a time.
+    LaunchedEffect(currentIndex, lyricsLoaded) {
         if (lines.isEmpty()) return@LaunchedEffect
-        val visible = listState.layoutInfo.visibleItemsInfo.size.coerceAtLeast(1)
-        val first = listState.firstVisibleItemIndex
-        val lowerBound = first + 1
-        val upperBound = first + visible - 3
-        if (currentIndex in lowerBound..upperBound) return@LaunchedEffect
-        val target = (currentIndex - 3).coerceAtLeast(0)
         runCatching {
-            if (abs(target - first) <= 2) listState.scrollToItem(target)
-            else listState.animateScrollToItem(target)
+            val info = listState.layoutInfo
+            val item = info.visibleItemsInfo.firstOrNull { it.index == currentIndex }
+            if (item != null) {
+                // Glide the line's centre to an anchor ~38% down the viewport (slightly above centre).
+                val viewport = info.viewportEndOffset - info.viewportStartOffset
+                val anchor = info.viewportStartOffset + viewport * 0.38f
+                val delta = item.offset + item.size / 2f - anchor
+                listState.animateScrollBy(delta, tween(durationMillis = 600, easing = FastOutSlowInEasing))
+            } else {
+                // Line is far off-screen (seek, tapped the bar, opened mid-song): land near the anchor
+                // directly; subsequent lines glide from there.
+                listState.animateScrollToItem((currentIndex - 2).coerceAtLeast(0))
+            }
         }
     }
 

@@ -10,7 +10,7 @@
     <string name="spotify_api_rate_limit_reached">Limite de l\'API Spotify atteinte</string>
     <string name="bugs_or_suggestions_contact_us">Vous avez trouvé un bug ? Vous avez une suggestion ? Vous voulez contribuer ? N\'hésitez pas à me contacter sur mon groupe Telegram.</string>
     <string name="search">Recherche</string>
-    <string name="what_is_songsync">SongSync est une application qui vous permet de télécharger des paroles synchronisées (fichiers .lrc) pour votre bibliothèque musicale locale.</string>
+    <string name="what_is_songsync">MusicResync est une application qui vous permet de télécharger des paroles synchronisées (fichiers .lrc) pour votre bibliothèque musicale locale.</string>
     <string name="duration">Durée</string>
     <string name="ok">Ok</string>
     <string name="synced_lyrics">Obtenez des paroles non synchronisées</string>
@@ -35,9 +35,9 @@
     <string name="extra_what_is_songsync">Vous pouvez également rechercher des chansons spécifiques pour obtenir leurs paroles (et les enregistrer en les téléchargeants).</string>
     <string name="app_version">Version de l\'application : %1$s</string>
     <string name="spotify_for_developers">Spotify pour les développeurs</string>
-    <string name="about_songsync">À propos de SongSync</string>
+    <string name="about_songsync">À propos de MusicResync</string>
     <string name="view_on_github">Voir sur GitHub</string>
-    <string name="we_are_open_source">SongSync est un projet open source. Vous pouvez trouver le code source sur GitHub.</string>
+    <string name="we_are_open_source">MusicResync est un projet open source. Vous pouvez trouver le code source sur GitHub.</string>
     <string name="contributors">Contributeurs</string>
     <string name="telegram_group">Groupe Telegram</string>
     <string name="create_issue">Vous pouvez également créer un problème sur GitHub (lien ci-dessus).</string>
@@ -135,7 +135,7 @@
     <string name="by">par</string>
     <string name="error">Erreur</string>
     <string name="yes">Oui</string>
-    <string name="how_we_get_lyrics">SongSync utilise l\'API SpotifyLyrics pour obtenir les paroles des chansons. Vous trouverez plus d\'informations sur l\'API SpotifyLyrics sur leur page GitHub.</string>
+    <string name="how_we_get_lyrics">MusicResync utilise l\'API SpotifyLyrics pour obtenir les paroles des chansons. Vous trouverez plus d\'informations sur l\'API SpotifyLyrics sur leur page GitHub.</string>
     <string name="year">Année</string>
     <string name="include_translation_summary">Inclure les paroles traduites lors de l\'obtention des paroles de chansons auprès du fournisseur NetEase</string>
     <string name="up_to_date">Vous utilisez la dernière version</string>
@@ -154,7 +154,7 @@
     <string name="show_notification_permission">Afficher les notifications (facultatif)</string>
     <string name="show_notification_description">Utilisé pour afficher une notification de progression du téléchargement</string>
     <string name="_continue">Continuer</string>
-    <string name="init_screen_title">Bienvenue sur SongSync !</string>
+    <string name="init_screen_title">Bienvenue sur MusicResync !</string>
     <string name="init_screen_description">Pour commencer, veuillez accorder les autorisations suivantes :</string>
     <string name="now_playing_song">Chanson en cours de lecture</string>
     <string name="notification_access">Accès aux notifications (facultatif)</string>

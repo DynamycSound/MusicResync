@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name" translatable="false">SongSync</string>
+    <string name="app_name" translatable="false">MusicResync</string>
     <string name="batch_download_lyrics">Toplu şarkı sözü indir</string>
     <string name="get_lyrics">Şarkı sözlerini al</string>
     <string name="try_again">Tekrar dene</string>
@@ -24,16 +24,16 @@
     <string name="no_results">Sonuç yok</string>
     <string name="no_internet_server">İnternet bağlantısı yok veya sunucu kapalı</string>
     <string name="unknown">Bilinmeyen</string>
-    <string name="generated_using" translatable="false">Generated using SongSync</string>
-    <string name="what_is_songsync">SongSync, yerel müzik kütüphaneniz için senkronize şarkı sözleri (.lrc dosyaları) indirmenizi sağlayan bir uygulamadır.</string>
+    <string name="generated_using" translatable="false">Generated using MusicResync</string>
+    <string name="what_is_songsync">MusicResync, yerel müzik kütüphaneniz için senkronize şarkı sözleri (.lrc dosyaları) indirmenizi sağlayan bir uygulamadır.</string>
     <string name="extra_what_is_songsync">Ayrıca belirli şarkıları arayarak şarkı sözlerini alabilir (ve bunları indirmelere kaydedebilirsiniz).</string>
     <string name="app_version">Uygulama sürümü: %1$s</string>
     <string name="spotify_for_developers">Geliştiriciler için Spotify</string>
     <string name="spotifylyrics_api" translatable="false">SpotifyLyrics API</string>
-    <string name="about_songsync">SongSync Hakkında</string>
-    <string name="how_we_get_lyrics">SongSync, şarkı sözlerini almak için SpotifyLyrics API’sini kullanır. SpotifyLyrics API hakkında daha fazla bilgiyi GitHub sayfasında bulabilirsiniz.</string>
+    <string name="about_songsync">MusicResync Hakkında</string>
+    <string name="how_we_get_lyrics">MusicResync, şarkı sözlerini almak için SpotifyLyrics API’sini kullanır. SpotifyLyrics API hakkında daha fazla bilgiyi GitHub sayfasında bulabilirsiniz.</string>
     <string name="view_on_github">GitHub’da Görüntüle</string>
-    <string name="we_are_open_source">SongSync bir açık kaynak projesidir. Kaynak kodunu GitHub’da bulabilirsiniz.</string>
+    <string name="we_are_open_source">MusicResync bir açık kaynak projesidir. Kaynak kodunu GitHub’da bulabilirsiniz.</string>
     <string name="contributors">Katkıda Bulunanlar</string>
     <string name="github" translatable="false">GitHub</string>
     <string name="telegram" translatable="false">Telegram</string>
@@ -160,7 +160,7 @@
     <string name="show_notification_permission">Bildirim göster (İsteğe bağlı)</string>
     <string name="show_notification_description">İndirme ilerleme bildirimini göstermek için kullanılır</string>
     <string name="_continue">Devam et</string>
-    <string name="init_screen_title">SongSync’e Hoş Geldiniz!</string>
+    <string name="init_screen_title">MusicResync’e Hoş Geldiniz!</string>
     <string name="init_screen_description">Başlamak için lütfen aşağıdaki izinleri verin:</string>
     <string name="now_playing_song">Şu anda çalan şarkı</string>
     <string name="notification_access">Bildirim erişimi (İsteğe bağlı)</string>
