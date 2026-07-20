@@ -51,6 +51,30 @@ object TextMatch {
     private val leadingTrackNo = Regex("""^\s*\d{1,2}\s*[.)\-_]\s*""")
 
     /**
+     * Runs of '?' or U+FFFD left where a filesystem/tagger couldn't represent the original characters
+     * ("DEVITO - FLEX ????" was "FLEX" plus emoji/Cyrillic). They poison provider queries; the words around
+     * them are what's searchable.
+     */
+    private val garbledChars = Regex("""\?{2,}|�+""")
+
+    /**
+     * YouTube channel-name decorations that are not part of the real artist ("WAV3POP - Topic",
+     * "Crni Cerak TV", "La Kojot Official"). Only used to derive an EXTRA artist reading — the raw value
+     * always stays as a candidate too, so a real artist that happens to end in one of these loses nothing.
+     */
+    private val channelSuffix = Regex(
+        """\s*(?:-\s*Topic|TV|Official(?:\s+(?:Music|Channel))?|Music|Records|Media)\s*$""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** Strips channel decorations off a tag artist; returns "" when nothing real remains. */
+    fun stripChannelSuffix(raw: String): String {
+        var s = raw.trim()
+        repeat(2) { s = channelSuffix.replace(s, "").trim(' ', '-', '_') }
+        return s
+    }
+
+    /**
      * Light cleanup that keeps the human-readable shape: strips noise brackets, collapses the SnapTube
      * underscore-for-punctuation convention into spaces, and trims leading track numbers.
      */
@@ -58,6 +82,7 @@ object TextMatch {
         var s = raw
         s = noiseBrackets.replace(s, " ")
         s = leadingTrackNo.replace(s, "")
+        s = garbledChars.replace(s, " ")
         s = s.replace('_', ' ')
         s = s.replace(Regex("""[\s]+"""), " ").trim()
         // Drop dangling separators/brackets left behind by removals.

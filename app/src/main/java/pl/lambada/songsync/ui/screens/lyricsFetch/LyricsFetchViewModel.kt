@@ -17,6 +17,7 @@ import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
 import pl.lambada.songsync.data.remote.lyrics_providers.MatchConfig
 import pl.lambada.songsync.data.remote.lyrics_providers.ScoredHit
 import pl.lambada.songsync.data.remote.lyrics_providers.SmartLyricsMatcher
+import pl.lambada.songsync.data.remote.lyrics_providers.artistGuessesFor
 import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.ui.LocalSong
 import pl.lambada.songsync.util.Providers
@@ -31,6 +32,7 @@ import pl.lambada.songsync.util.matching.QueryCandidate
 import pl.lambada.songsync.util.matching.TextMatch
 import com.kyant.taglib.TagLib
 import pl.lambada.songsync.util.CoverArtCompare
+import pl.lambada.songsync.util.CoverIdentity
 import pl.lambada.songsync.util.embedCoverInFile
 import pl.lambada.songsync.util.embedLyricsInFile
 import pl.lambada.songsync.util.ext.getVersion
@@ -124,8 +126,18 @@ class LyricsFetchViewModel(
                     queryArtistName.takeIf { !TextMatch.isJunkArtist(it) },
                     durationSec,
                 )
-                val candidates = FilenameParser.candidates(querySongName, queryArtistName, source?.filePath)
+                val parsed = FilenameParser.candidates(querySongName, queryArtistName, source?.filePath)
                     .ifEmpty { listOf(QueryCandidate(querySongName, queryArtistName ?: "", MatchStrategy.TAGS)) }
+
+                // Cover-driven identification (same as batch): a file with no usable artist anywhere is only
+                // identifiable by its embedded album art — discover the identity and lead the search with it.
+                val candidates = if (artistGuessesFor(local, parsed).isEmpty()) {
+                    val id = runCatching {
+                        CoverIdentity.discover(context, source?.filePath, parsed.map { it.asSearchString() }, durationSec)
+                    }.getOrNull()
+                    if (id != null) listOf(QueryCandidate(id.title, id.artist, MatchStrategy.COVER_IDENTITY)) + parsed
+                    else parsed
+                } else parsed
 
                 // Selected provider first, then the user's configured fallback chain (Settings > Provider order).
                 // Providers the user disabled are not queried automatically (they stay available via the

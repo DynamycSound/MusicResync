@@ -18,6 +18,8 @@ import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
 import pl.lambada.songsync.data.remote.lyrics_providers.MatchConfig
 import pl.lambada.songsync.data.remote.lyrics_providers.ScoredHit
 import pl.lambada.songsync.data.remote.lyrics_providers.SmartLyricsMatcher
+import pl.lambada.songsync.data.remote.lyrics_providers.artistDisagreesWithAllGuesses
+import pl.lambada.songsync.data.remote.lyrics_providers.artistGuessesFor
 import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.domain.model.SongInfo
@@ -27,7 +29,9 @@ import pl.lambada.songsync.util.matching.FilenameParser
 import pl.lambada.songsync.util.matching.LocalTrack
 import pl.lambada.songsync.util.matching.LrcPrescan
 import pl.lambada.songsync.util.matching.LyricState
+import pl.lambada.songsync.util.matching.MatchStrategy
 import pl.lambada.songsync.util.matching.MatchTier
+import pl.lambada.songsync.util.matching.QueryCandidate
 import pl.lambada.songsync.util.matching.SongMatchInfo
 import pl.lambada.songsync.util.matching.TextMatch
 import kotlinx.coroutines.ensureActive
@@ -432,7 +436,25 @@ suspend fun matchAndSaveSong(
         durationSec = song.durationMs?.let { it / 1000.0 },
         album = song.album,
     )
-    val candidates = FilenameParser.candidates(song.title, song.artist, song.filePath)
+    val parsed = FilenameParser.candidates(song.title, song.artist, song.filePath)
+
+    // Cover-driven identification: a file with NO usable artist anywhere ("Bounce", artist "Unknown") cannot
+    // be told apart from every other same-titled song by text — but its embedded cover can. Discover the real
+    // identity up front and lead with it, both as a query ("Voyage Bounce") and as an artist guess the
+    // wrong-singer veto can finally use.
+    var discovered: CoverIdentity.Discovered? = null
+    var discoveryRan = false
+    var candidates = parsed
+    if (artistGuessesFor(local, parsed).isEmpty()) {
+        discoveryRan = true
+        discovered = runCatching {
+            CoverIdentity.discover(context, song.filePath, parsed.map { it.asSearchString() }, local.durationSec)
+        }.getOrNull()
+        discovered?.let {
+            candidates = listOf(QueryCandidate(it.title, it.artist, MatchStrategy.COVER_IDENTITY)) + parsed
+        }
+    }
+    val artistGuesses = artistGuessesFor(local, candidates)
 
     // Which providers were actually queried for this song, in order. Persisted on the outcome so the
     // song's provider list can later show "found / no match / not tried" per provider.
@@ -459,6 +481,20 @@ suspend fun matchAndSaveSong(
     var lyrics: String? = null
     for (hit in nonRejected) {
         coroutineContext.ensureActive()
+        // A hit whose artist agrees with none of our guesses survived only on the exact-runtime escape
+        // ("Check" by The Boy landing on WAV3POP's "CHECK" because the lengths coincided). Before trusting
+        // it, ask the cover art for a second opinion: if the file's own art identifies a DIFFERENT artist,
+        // the hit is an impostor — skip it. No art / no identification keeps the existing behaviour.
+        if (artistDisagreesWithAllGuesses(artistGuesses, hit.result.artist)) {
+            if (!discoveryRan) {
+                discoveryRan = true
+                discovered = runCatching {
+                    CoverIdentity.discover(context, song.filePath, candidates.map { it.asSearchString() }, local.durationSec)
+                }.getOrNull()
+            }
+            val idArtist = discovered?.artist
+            if (idArtist != null && TextMatch.similarity(idArtist, hit.result.artist) < 0.50) continue
+        }
         val l = runCatching { matcher.fetchLyrics(hit, config) }.getOrNull()
         if (!l.isNullOrBlank()) { chosen = hit; lyrics = l; break }
     }
