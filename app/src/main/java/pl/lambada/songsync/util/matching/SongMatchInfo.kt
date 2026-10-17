@@ -43,4 +43,13 @@ data class SongMatchInfo(
     val hasLyrics: Boolean
         get() = state == LyricState.HAS_LYRICS || state == LyricState.SYNCED ||
             state == LyricState.REVIEW
+
+    /**
+     * True when a real fetch already came up empty on every provider in [providersNow], so asking again would only
+     * repeat it. A provider the last run never asked (one added in an update, or one switched back on) means it
+     * isn't: the song gets another try. A NO_LYRICS state without [failedProviders] was only seeded by the disk
+     * pre-scan, never fetched.
+     */
+    fun searchedEverywhere(providersNow: List<Providers>): Boolean =
+        state == LyricState.NO_LYRICS && failedProviders.isNotEmpty() && failedProviders.containsAll(providersNow)
 }

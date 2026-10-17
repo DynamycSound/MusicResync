@@ -72,10 +72,13 @@ jobs:
           name: app-release.apk
           path: ./app/build/outputs/apk/release/app-release.apk
 
-      # Auto-publish a GitHub Release for the current versionName. New version -> a fresh release is created;
-      # same version pushed again -> the APK on the existing release is refreshed. Fully automatic: bump
-      # versionName in app/build.gradle.kts, push, and the release appears with the signed APK attached.
+      # Auto-publish a GitHub Release for the current versionName, from the default branch only (a feature branch
+      # push must never publish or touch a release). New version -> a fresh release with the signed APK. Same
+      # version pushed again -> only the notes are refreshed: the APK already on a release is NEVER replaced,
+      # because replacing a release asset deletes it and with it its download count (the README's downloads badge
+      # sums those counts). To ship a fix, bump versionName.
       - name: Publish GitHub Release
+        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -90,8 +93,7 @@ jobs:
           fi
 
           if gh release view "v$VERSION" >/dev/null 2>&1; then
-            # Refresh both the APK and the notes so re-pushing the same version updates the existing release.
-            gh release upload "v$VERSION" "MusicResync-v$VERSION.apk" --clobber
+            echo "Release v$VERSION already exists: keeping its APK (and download count), refreshing the notes only."
             if [ -f RELEASE_NOTES.md ]; then
               gh release edit "v$VERSION" --notes-file RELEASE_NOTES.md
             fi

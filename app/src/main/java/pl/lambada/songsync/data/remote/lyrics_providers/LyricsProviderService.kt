@@ -3,6 +3,7 @@ package pl.lambada.songsync.data.remote.lyrics_providers
 import android.util.Log
 import pl.lambada.songsync.data.remote.lyrics_providers.apple.AppleAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.BetterLyricsAPI
+import pl.lambada.songsync.data.remote.lyrics_providers.others.DeezerAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LastResortAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LyricsPlusAPI
@@ -71,6 +72,7 @@ class LyricsProviderService {
                 Providers.NETEASE -> NeteaseAPI().getSongInfo(query, offset) ?: throw NoTrackFoundException()
                 Providers.QQMUSIC -> QQMusicAPI().getSongInfo(query, offset) ?: throw NoTrackFoundException()
                 Providers.APPLE -> appleAPI.getSongInfo(query, offset) ?: throw NoTrackFoundException()
+                Providers.DEEZER -> DeezerAPI().getSongInfo(query, offset) ?: throw NoTrackFoundException()
                 // Direct-fetch providers: no search endpoint, so there is nothing to paginate — the query itself
                 // is the lookup token and getSyncedLyrics performs the actual fetch.
                 Providers.LYRICSPLUS, Providers.BETTERLYRICS ->
@@ -217,6 +219,7 @@ class LyricsProviderService {
         return when (provider) {
             Providers.SPOTIFY -> SpotifyLyricsAPI().getSyncedLyrics(song.songLink ?: "")
             Providers.LRCLIB -> LRCLibAPI().getSyncedLyrics(song.lrcLibID ?: 0)
+            Providers.DEEZER -> song.deezerID?.let { DeezerAPI().getSyncedLyrics(it) }
             Providers.NETEASE -> NeteaseAPI().getSyncedLyrics(
                 song.neteaseID ?: 0L, includeTranslationNetEase, includeRomanizationNetEase
             )

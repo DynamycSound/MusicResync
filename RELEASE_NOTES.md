@@ -1,24 +1,30 @@
-## MusicResync v1.7.0
+## MusicResync v1.8.0
 
-### Fast mode, fixed and promoted — now the recommended way to batch download
-Fast mode was silently searching only your top **two** providers — that's why songs like **"Ili Ili"** and **"Peta Brzina"** (which are on LRCLib, synced) came back "not found" in fast batch runs while the provider that has them never even got asked. Fast mode now races **all** enabled providers in parallel with tight time budgets: same providers, same candidate parsing, same precision guards — the speed comes from not waiting on slow servers, not from skipping sources. The toggle now also lives at the top of the **batch download options**, marked *Recommended*, and applies to batch runs.
+### Deezer: synced lyrics for the songs nobody else had
+MusicResync now gets synced lyrics from **Deezer**, and asks it **first**. No account or key is needed. Deezer carries licensed, timed lyrics for a huge catalogue, including a lot of Balkan rap that LRCLib and the others simply don't have: Biba "Au" and "BIG BOSS", Gregor Magaš "Srećica", Nihil "Snob", Crni Cerak "Dlan", 38banda "START" and many more. On a real library of SnapTube rips, a rerun over the "No Lyrics" tab found synced lyrics for about one song in five that every other source had missed.
 
-### Lyrics player actually follows the song now
-The real cause of the "player stuck at the first line" bug: when opening a song from Home, the lyrics load in the background — and the highlight logic kept watching the initial *empty* lyrics list forever, so neither the highlight nor the scroll ever moved. Fixed. Word-by-word files (`<00:40.49>` inline stamps) also no longer show those raw stamps as text — and files carrying *only* word stamps now play instead of showing nothing.
+- A Deezer result only counts when it actually has synced lyrics, so it never stops the other sources from being asked.
+- Deezer's search returns an artist's whole catalogue, so its results also need a matching title. A same-length song by the same artist can't slip through.
+- **Already arranged your providers?** Your order stays. Deezer is slotted in at its default spot (first), and you can move it or switch it off in Settings like any other.
+- Songs an earlier batch couldn't find are **retried automatically** when a source they were never searched on is available. "Skip songs with no lyrics" now only skips songs that every current source has already seen.
 
-### The "200" fluke, and the class it belongs to, is closed
-"200" by Ourmoney got Russian lyrics from a same-*length* "200" by a different act — a runtime coincidence was still enough to override a disagreeing artist. In batch, it isn't anymore: a match whose artist agrees with **none** of the file's artist readings must now be positively confirmed by the file's cover art, or it's skipped. (The correct "200" exists on LRCLib as unsynced — enable "Add unsynced if no synced" to pick it up.)
+### Hide songs, skip folders, pick folders (#18, #21, #22)
+- **Hide songs** you never want lyrics for: select them and tap the hide icon. They're listed (and can be unhidden) under Filters → Hidden songs.
+- **Folder picker** is now a full tree with tri-state checkboxes, search and song counts. A new **"Only show checked folders"** mode means new folders stay out until you add them.
+- **Skip folder** during a batch run: jump past the rest of a folder without stopping the whole run.
 
-### Cyrillic and Latin finally speak the same language
-Provider entries written in Cyrillic ("Секси") now compare equal to their Latin spelling ("Seksi") instead of counting as strangers — matching now works across scripts in both directions, for artists and titles.
+### Now playing (#19)
+An optional **Now playing** card at the top of Home shows what's playing in any app: YouTube, Spotify, your music player. Tap it for a **live lyrics view** that follows the song with the current line highlighted. Tap a line to seek, and the controls drive the playing app. You can also save lyrics for a library song straight from there. Turn it on or off in Settings (it needs notification access, which is only used to read what's playing).
 
-### More recovered names
-- **'Summer Cem - "TMM TMM"'** — quotes in a title no longer break provider search (the song is on LRCLib, synced).
-- Channel-artist and collab-splitting fixes from 1.6.4 now actually reach every provider thanks to the fast-mode fix.
+### Simpler, cleaner
+- **Fast matching is on by default** everywhere. Pick songs, press Start, done.
+- Batch options keep the three choices that matter up top. Everything else sits under a collapsed **Advanced** section.
+- Filters and Hidden songs are full pages instead of popups. Old settings that did nothing are gone.
+- New selection look: picked songs become rounded cards with a tick on the cover, and the top bar groups Select all / Invert / Hide with a highlighted **download** button.
+- The lyrics player's background takes its colours from the artwork, and you can choose which source to use (saved lyrics, best match, or one provider), with a preview before applying.
 
-### Honest about the rest
-We verified the missing Serbian catalogue directly: QQ Music *indexes* many of these songs (Prazan Disko, Volim Pare…) but has **no lyric content** for them, Genius has no usable public API, and tekstovi.net has no machine-readable search. Songs that no catalogue carries still fail honestly — no fluke lyrics, ever.
+### Sources
+- BetterLyrics falls back to its keyless upstream when its API only answers from cache.
+- LyricsPlus drops two dead mirrors and keeps the three live ones.
 
-**Samsung Music note:** Samsung's player only reads *synced* `.lrc` sidecars and *embedded* tags. If you want unsynced lyrics visible there, enable **Embed lyrics in file** in batch options — a plain text `.lrc` alone won't show up.
-
-Install over your existing app — it's signed with the same key, so it upgrades in place.
+Install over your existing app. It's signed with the same key, so it upgrades in place and keeps your settings.

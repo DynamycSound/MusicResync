@@ -14,7 +14,6 @@ matching engine — plus a built-in Samsung-Music-style lyrics player.
 ![Kotlin](https://img.shields.io/badge/Kotlin-100%25-8A5CF6.svg?logo=kotlin)
 [![Release](https://img.shields.io/github/v/release/DynamycSound/MusicResync?color=8A5CF6)](../../releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/DynamycSound/MusicResync/total?color=1E1E27)](../../releases)
-![No API keys](https://img.shields.io/badge/setup-no%20API%20keys%20needed-3DDC84.svg)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-8A5CF6.svg)](../../pulls)
 
 [Install](#-install) · [What makes it different](#-what-makes-it-different) · [Providers](#️-robust-providers) · [Build](#️-build-from-source) · [Credits](#-credits)
@@ -33,7 +32,7 @@ matching engine — plus a built-in Samsung-Music-style lyrics player.
 |---|---|
 | **What is it?** | An Android app that finds **time-synced lyrics** (`.lrc`) for your local music |
 | **What's special?** | It works on music with **wrong or missing tags** — filename parsing, noise stripping, and duration-based confidence scoring find the *right* match |
-| **Setup?** | None. No account, no API keys — the default provider (LRCLib) is free and open |
+| **Setup?** | None. No account, no API keys — every provider works out of the box |
 | **How do I use it?** | Pick your music folder → tap **Batch download lyrics** → done |
 | **Bonus** | Built-in synced-lyrics player with live highlighting and an offset fine-tune slider |
 | **Origin** | A heavily reworked fork of [SongSync](https://github.com/Lambada10/SongSync) (GPLv3) |
@@ -80,7 +79,9 @@ quietly falls through the others instead of throwing an error at you.
 
 | Provider | Auth | Notes |
 |---|---|---|
-| **LRCLib** (default) | none | Returns duration + lyrics in one request |
+| **Deezer** (tried first) | none | Licensed synced lyrics, huge catalogue — great for Balkan and other non-English music |
+| **LRCLib** | none | Community lyrics; returns duration + lyrics in one request |
+| **LyricsPlus / BetterLyrics** | none | Word-by-word lyrics where available |
 | **Netease** | none | Strong non-English coverage |
 | **Apple Music** | none | Best-effort fallback |
 | **Spotify** | none | Rotating keys fetched from several independent mirrors, cached locally |
@@ -97,7 +98,7 @@ None of this blocks app launch — a provider going down never breaks the app.
 3. On first launch, grant **All files access** so the app can read your music and save `.lrc`
    files next to it.
 
-> No setup or API keys required — LRCLib (the default) needs no account. MusicResync uses its
+> No setup or API keys required — none of the lyrics providers need an account. MusicResync uses its
 > own package id, so it installs **alongside** (not over) the original SongSync.
 
 ---
@@ -114,7 +115,7 @@ cd MusicResync
 ```
 
 The matching engine (`app/.../util/matching/`) is pure Kotlin and unit-tested on the JVM against real filenames
-and the live LRCLib API — no emulator required to validate it.
+and the live provider APIs — no emulator required to validate it.
 
 Releases are built and signed by CI with a committed **disposable** keystore (it exists only so
 updates install over each other — it protects nothing and signs nothing official).

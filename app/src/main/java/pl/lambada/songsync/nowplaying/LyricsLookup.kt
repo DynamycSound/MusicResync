@@ -26,9 +26,9 @@ class LyricsLookup(private val matcher: SmartLyricsMatcher) {
      */
     suspend fun best(local: LocalTrack, candidates: List<QueryCandidate>, order: List<Providers>): FoundLyrics? {
         // The matcher reads results in this order, so a slow or failing provider first in line holds up everyone
-        // behind it until its timeout. LRCLib answers fast with synced lyrics and a duration to check against;
-        // asking it first means a sure LRCLib match shows in a second instead of after the slowest provider.
-        val config = MatchConfig.fast((listOf(Providers.LRCLIB) + order).distinct())
+        // behind it until its timeout. Deezer and LRCLib answer fast with synced lyrics and a duration to check
+        // against; asking them first means a sure match shows in a second instead of after the slowest provider.
+        val config = MatchConfig.fast((listOf(Providers.DEEZER, Providers.LRCLIB) + order).distinct())
 
         val hits = matcher.search(local, candidates, config).filter { it.tier != MatchTier.REJECT }
         for (hit in hits) {

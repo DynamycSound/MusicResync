@@ -31,15 +31,24 @@ internal fun parseBlacklistedFolders(raw: String): List<String> =
 
 /**
  * Parses the persisted provider fallback order (comma-joined enum names) back into a full provider list.
- * Robust against renames/removals (unknown names are dropped) and additions (providers missing from the stored
- * value — e.g. ones added in an update — are appended in default-order position). Pure + internal so it's
- * unit-testable without a DataStore.
+ * Robust against renames/removals (unknown names are dropped) and additions: a provider missing from the stored
+ * value (one added in an update, which the user never got to place) goes in right after the provider it follows
+ * in the default order, or first if it leads the default order, and the user's own providers keep their order.
+ * Pure + internal so it's unit-testable without a DataStore.
  */
 internal fun parseProviderOrder(raw: String): List<Providers> {
     val stored = raw.split(",").mapNotNull { name ->
         Providers.entries.find { it.name == name.trim() }
     }.distinct()
-    return stored + defaultProviderFallbackOrder.filter { it !in stored }
+    if (stored.isEmpty()) return defaultProviderFallbackOrder
+    val order = stored.toMutableList()
+    defaultProviderFallbackOrder.forEachIndexed { index, provider ->
+        if (provider in order) return@forEachIndexed
+        // Every earlier default provider is in the list by now, so the predecessor is always found.
+        val after = if (index == 0) -1 else order.indexOf(defaultProviderFallbackOrder[index - 1])
+        order.add(after + 1, provider)
+    }
+    return order
 }
 
 /** Parses the persisted disabled-provider set (comma-joined enum names), dropping unknown names. */

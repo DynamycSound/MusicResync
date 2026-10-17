@@ -1,9 +1,14 @@
 package pl.lambada.songsync.ui.screens.home.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -22,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.MusicOff
 import androidx.compose.material.icons.filled.PlayCircle
@@ -75,13 +82,17 @@ fun SongItem(
     )
     val songName = song.title ?: stringResource(id = R.string.unknown)
     val artists = song.artist ?: stringResource(id = R.string.unknown)
-    val bgColor = if (selected) MaterialTheme.colorScheme.surfaceVariant
+    // A picked song gets a rounded tinted card (and a tick over its cover) instead of a flat grey stripe.
+    val bgColor = if (selected) MaterialTheme.colorScheme.secondaryContainer
     else MaterialTheme.colorScheme.surface
+    val animatedBg by animateColorAsState(bgColor, label = "rowBackground")
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(if (showPath) 100.dp else 80.dp)
-            .background(bgColor)
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(animatedBg)
             .combinedClickable(
                 onClick = {
                     if (quickSelect)
@@ -91,28 +102,34 @@ fun SongItem(
                 },
                 onLongClick = { onSelectionChanged(!selected) }
             )
-            .padding(vertical = 12.dp, horizontal = 24.dp)
+            .padding(vertical = 10.dp, horizontal = 16.dp)
     ) {
         with(sharedTransitionScope) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     modifier = Modifier.fillMaxHeight(if (showPath) 0.7f else 1f),
                 ) {
-                    Image(
-                        painter = painter,
-                        contentDescription = stringResource(id = R.string.album_cover),
+                    Box(
                         modifier = Modifier
-                            .sharedBounds(
-                                sharedContentState = rememberSharedContentState(key = "cover$filePath"),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                clipInOverlayDuringTransition = sharedTransitionScope.OverlayClip(
-                                    RoundedCornerShape(20f)
-                                )
-                            )
                             .fillMaxHeight()
                             .aspectRatio(1f)
-                            .clip(RoundedCornerShape(20f))
-                    )
+                    ) {
+                        Image(
+                            painter = painter,
+                            contentDescription = stringResource(id = R.string.album_cover),
+                            modifier = Modifier
+                                .sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "cover$filePath"),
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    clipInOverlayDuringTransition = sharedTransitionScope.OverlayClip(
+                                        RoundedCornerShape(20f)
+                                    )
+                                )
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(20f))
+                        )
+                        SelectedTick(visible = selected, modifier = Modifier.matchParentSize())
+                    }
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(
                         modifier = Modifier.fillMaxHeight(),
@@ -173,6 +190,32 @@ fun SongItem(
             confidencePercent = confidencePercent,
             modifier = Modifier.align(Alignment.CenterVertically)
         )
+    }
+}
+
+/** The tick over a picked song's cover. */
+@Composable
+private fun SelectedTick(visible: Boolean, modifier: Modifier = Modifier) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = scaleIn(initialScale = 0.6f) + fadeIn(),
+        exit = scaleOut(targetScale = 0.6f) + fadeOut(),
+        modifier = modifier,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(20f))
+                .background(Color.Black.copy(alpha = 0.45f)),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp),
+            )
+        }
     }
 }
 

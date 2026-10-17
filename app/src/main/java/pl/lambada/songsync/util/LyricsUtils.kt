@@ -273,6 +273,7 @@ fun handleSecurityException(
  * Defines possible provider choices
  */
 enum class Providers(val displayName: String, val hasWordByWord: Boolean) {
+    DEEZER("Deezer", false),
     APPLE("Apple Music", true),
     LRCLIB("LRCLib", false),
     LYRICSPLUS("LyricsPlus", true),
@@ -284,10 +285,11 @@ enum class Providers(val displayName: String, val hasWordByWord: Boolean) {
 
 /**
  * Default provider fallback chain (issue #6): the order providers are tried in until one has a match, unless
- * the user rearranges it in Settings. LRCLib first (fast, no auth), then the word-by-word direct providers,
- * then the searchable catalogues.
+ * the user rearranges it in Settings. Deezer first (licensed synced lyrics, widest catalogue, no auth), LRCLib
+ * second (fast, community-made), then the word-by-word direct providers, then the searchable catalogues.
  */
 val defaultProviderFallbackOrder: List<Providers> = listOf(
+    Providers.DEEZER,
     Providers.LRCLIB,
     Providers.LYRICSPLUS,
     Providers.BETTERLYRICS,

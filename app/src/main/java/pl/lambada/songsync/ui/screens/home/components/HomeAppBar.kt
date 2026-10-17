@@ -1,30 +1,37 @@
 package pl.lambada.songsync.ui.screens.home.components
 
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Deselect
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MediumTopAppBar
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import pl.lambada.songsync.R
 
@@ -46,7 +53,7 @@ fun HomeAppBar(
             if (showing) {
                 IconButton(onClick = onSelectedClearAction) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        imageVector = Icons.Filled.Close,
                         contentDescription = stringResource(R.string.back)
                     )
                 }
@@ -54,13 +61,21 @@ fun HomeAppBar(
         },
         title = {
             if (showing) {
-                Crossfade(
+                // The count rolls up or down as songs are picked, instead of the whole title blinking.
+                AnimatedContent(
                     targetState = cachedSize,
-                    label = ""
+                    transitionSpec = {
+                        val up = targetState > initialState
+                        (slideInVertically { if (up) it else -it } + fadeIn()) togetherWith
+                            (slideOutVertically { if (up) -it else it } + fadeOut()) using SizeTransform(clip = false)
+                    },
+                    label = "selectedCount",
                 ) { size ->
                     Text(
                         modifier = Modifier.padding(start = 6.dp),
-                        text = stringResource(id = R.string.selected_count, size)
+                        text = stringResource(id = R.string.selected_count, size),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
             } else {
@@ -72,76 +87,69 @@ fun HomeAppBar(
         },
         actions = {
             if (showing) {
-                IconButton(
-                    onClick = {
+                SelectionActions(
+                    onSelectAll = {
                         onSelectedClearAction()
                         onSelectAllSongsRequest()
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.SelectAll,
-                        contentDescription = stringResource(R.string.select_all)
-                    )
-                }
-                IconButton(onClick = onInvertSongSelectionRequest) {
-                    Icon(
-                        imageVector = Icons.Filled.Deselect,
-                        contentDescription = stringResource(
-                            id = R.string.invert_selection
-                        )
-                    )
-                }
-                // Issue #18: hide the selected song(s) from the list (long-press a song, then tap this).
-                if (onHideSelectedRequest != null) {
-                    IconButton(onClick = onHideSelectedRequest) {
-                        Icon(
-                            imageVector = Icons.Outlined.VisibilityOff,
-                            contentDescription = stringResource(R.string.hide_from_list)
-                        )
-                    }
-                }
-                var expanded by remember { mutableStateOf(false) }
-                IconButton(onClick = { expanded = !expanded }) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More"
-                    )
-                }
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = stringResource(R.string.batch_download_lyrics),
-                                modifier = Modifier.padding(horizontal = 6.dp),
-                            )
-                        },
-                        onClick = {
-                            onBatchDownloadRequest()
-                            expanded = false
-                        }
-                    )
-                }
+                    },
+                    onInvert = onInvertSongSelectionRequest,
+                    onHide = onHideSelectedRequest,
+                    onBatchDownload = onBatchDownloadRequest,
+                )
             } else {
                 HomeTopAppBarDropDown(
                     onNavigateToSettingsSectionRequest = onNavigateToSettingsSectionRequest,
                 )
             }
         },
-        colors = if (showing) {
-            TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                scrolledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            )
-        } else {
-            // Match the (black) background instead of the default elevated grey that appears when scrolled.
-            TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-                scrolledContainerColor = MaterialTheme.colorScheme.surface,
-            )
-        },
+        // Both modes sit on the page background, so picking songs doesn't drop a grey slab over the list.
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            scrolledContainerColor = MaterialTheme.colorScheme.surface,
+        ),
         scrollBehavior = scrollBehavior,
     )
+}
+
+/**
+ * The selection actions as one rounded group: select all, invert and hide, then batch download for the picked songs
+ * as the highlighted button (it used to sit alone in an overflow menu).
+ */
+@Composable
+private fun SelectionActions(
+    onSelectAll: () -> Unit,
+    onInvert: () -> Unit,
+    onHide: (() -> Unit)?,
+    onBatchDownload: () -> Unit,
+) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.padding(end = 8.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        ) {
+            IconButton(onClick = onSelectAll) {
+                Icon(Icons.Filled.SelectAll, contentDescription = stringResource(R.string.select_all))
+            }
+            IconButton(onClick = onInvert) {
+                Icon(Icons.Filled.Deselect, contentDescription = stringResource(R.string.invert_selection))
+            }
+            // Issue #18: hide the selected song(s) from the list.
+            if (onHide != null) {
+                IconButton(onClick = onHide) {
+                    Icon(Icons.Outlined.VisibilityOff, contentDescription = stringResource(R.string.hide_from_list))
+                }
+            }
+            FilledIconButton(onClick = onBatchDownload, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Filled.Download,
+                    contentDescription = stringResource(R.string.batch_download_lyrics),
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+    }
 }

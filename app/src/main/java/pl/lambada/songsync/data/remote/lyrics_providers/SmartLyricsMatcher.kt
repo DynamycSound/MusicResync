@@ -6,6 +6,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import pl.lambada.songsync.data.remote.lyrics_providers.others.BetterLyricsAPI
+import pl.lambada.songsync.data.remote.lyrics_providers.others.DeezerAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LRCLibAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LastResortAPI
 import pl.lambada.songsync.data.remote.lyrics_providers.others.LyricsPlusAPI
@@ -23,6 +24,15 @@ import pl.lambada.songsync.util.matching.TextMatch
 import pl.lambada.songsync.util.networking.withRetry
 
 private const val TAG = "MusicResync"
+
+/** Deezer hits searched per query; its ranking puts remixes and covers near the top, so look a bit wider. */
+private const val DEEZER_SEARCH_LIMIT = 8
+
+/** Believable Deezer hits whose lyrics are fetched per query (each fetch is one request). */
+private const val MAX_DEEZER_LYRICS_FETCHES = 3
+
+/** Title similarity a Deezer hit needs on top of its score (see searchDeezer). */
+private const val DEEZER_MIN_TITLE_SIMILARITY = 0.55
 
 /** A scored provider hit: enough to rank it, show it in the manual UI, and later fetch its lyrics. */
 data class ScoredHit(
@@ -91,6 +101,7 @@ class SmartLyricsMatcher(
     /** Direct-fetch providers (no search endpoint): word-by-word/TTML sources added for issue #4. */
     private val lyricsPlus: LyricsPlusAPI = LyricsPlusAPI(),
     private val betterLyrics: BetterLyricsAPI = BetterLyricsAPI(),
+    private val deezer: DeezerAPI = DeezerAPI(),
 ) {
 
     /**
@@ -185,6 +196,7 @@ class SmartLyricsMatcher(
             val found = when (provider) {
                 Providers.LRCLIB -> searchLrcLib(query, local, cand, config, log)
                 Providers.NETEASE -> searchNetease(query, local, cand, config, log)
+                Providers.DEEZER -> searchDeezer(query, local, cand, config, log)
                 Providers.LYRICSPLUS, Providers.BETTERLYRICS -> searchDirect(provider, local, cand, config, log)
                 else -> searchGeneric(provider, local, cand, config, log)
             }
@@ -472,6 +484,42 @@ class SmartLyricsMatcher(
             }
             .sortedByDescending { it.confidence.score }
             .take(config.maxCandidatesPerProvider)
+    }
+
+    /**
+     * Deezer's search carries title, artist and length, so hits are scored like LRCLib's. Whether a track has
+     * timed lyrics is only known by asking, and a believable hit without them must not count as a match: it
+     * would end the search early and leave the user with nothing. So the best few believable hits have their
+     * lyrics fetched here, and only those with synced lyrics are returned, carrying them inline.
+     *
+     * Deezer's search answers an artist-heavy query with that artist's whole catalogue, so a different song by
+     * the same artist that happens to be the same length ("FOX X GRCA - #LSC" vs Fox's "Ulica si") can reach
+     * review grade on artist + duration alone. Deezer hits therefore also need real title evidence.
+     */
+    private suspend fun searchDeezer(
+        query: String, local: LocalTrack, cand: QueryCandidate, config: MatchConfig, log: (String) -> Unit
+    ): List<ScoredHit> {
+        val tracks = runCatching {
+            withRetry(config.maxRetries, config.retryBaseDelayMs, onRetry = { a, d, e -> log("  [Deezer] retry $a in ${d}ms (${e.message})") }) {
+                deezer.searchCandidates(query, DEEZER_SEARCH_LIMIT)
+            }
+        }.onFailure { log("  [Deezer] search failed: ${it.message}") }.getOrDefault(emptyList())
+
+        return tracks
+            .map { t -> t to scoreFor(local, ProviderResult(t.title, t.artist, t.durationSec, t.album, true), cand) }
+            .filter { (_, conf) ->
+                conf.tier != MatchTier.REJECT && conf.score >= ConfidenceScorer.REVIEW_THRESHOLD &&
+                    conf.title >= DEEZER_MIN_TITLE_SIMILARITY
+            }
+            .sortedByDescending { (_, conf) -> conf.score }
+            .take(MAX_DEEZER_LYRICS_FETCHES)
+            .mapNotNull { (t, conf) ->
+                val lyrics = runCatching { withRetry(config.maxRetries, config.retryBaseDelayMs) { deezer.getSyncedLyrics(t.id) } }
+                    .onFailure { log("  [Deezer] lyrics fetch failed: ${it.message}") }
+                    .getOrNull()
+                    ?: return@mapNotNull null.also { log("  [Deezer] ${t.artist} - ${t.title}: no synced lyrics") }
+                ScoredHit(Providers.DEEZER, cand.strategy, ProviderResult(t.title, t.artist, t.durationSec, t.album, true), conf, lyrics, null)
+            }
     }
 
     private suspend fun searchNetease(
