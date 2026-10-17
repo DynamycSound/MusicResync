@@ -1,12 +1,8 @@
 <div align="center">
 
-# 🎵 MusicResync
+# MusicResync
 
-**Smart synced-lyrics fetcher for Android — built for music with bad or missing metadata.**
-
-Point it at a folder of local music (even messy SnapTube/YouTube rips with broken tags) and it
-finds **time-synced `.lrc` lyrics** for every song, using a confidence-scored multi-strategy
-matching engine — plus a built-in Samsung-Music-style lyrics player.
+**Synced lyrics for your local music, even when the tags are a mess.**
 
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-8A5CF6.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Android%205.0%2B-1E1E27.svg?logo=android)
@@ -16,119 +12,60 @@ matching engine — plus a built-in Samsung-Music-style lyrics player.
 [![Downloads](https://img.shields.io/github/downloads/DynamycSound/MusicResync/total?color=1E1E27)](../../releases)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-8A5CF6.svg)](../../pulls)
 
-[Install](#-install) · [What makes it different](#-what-makes-it-different) · [Providers](#️-robust-providers) · [Build](#️-build-from-source) · [Credits](#-credits)
-
 <img src="docs/screenshots/home.png" width="30%" />&nbsp;
 <img src="docs/screenshots/batch-dialog.png" width="30%" />&nbsp;
 <img src="docs/screenshots/player.png" width="30%" />
+
+### [Download the latest release](../../releases/latest)
 
 </div>
 
 ---
 
-## At a glance
+Pick your music folder and press **Start**. MusicResync finds time-synced `.lrc` lyrics for every song and
+saves them next to the file, so Samsung Music and other players show them right away. It's made for
+SnapTube and YouTube rips with broken or missing tags, where other lyric apps give up.
 
-| Question | Answer |
-|---|---|
-| **What is it?** | An Android app that finds **time-synced lyrics** (`.lrc`) for your local music |
-| **What's special?** | It works on music with **wrong or missing tags** — filename parsing, noise stripping, and duration-based confidence scoring find the *right* match |
-| **Setup?** | None. No account, no API keys — every provider works out of the box |
-| **How do I use it?** | Pick your music folder → tap **Batch download lyrics** → done |
-| **Bonus** | Built-in synced-lyrics player with live highlighting and an offset fine-tune slider |
-| **Origin** | A heavily reworked fork of [SongSync](https://github.com/Lambada10/SongSync) (GPLv3) |
+## Features
 
-## ✨ What makes it different
+- **Smart matching.** Reads the artist and title from the filename when the tags are wrong, strips junk like
+  `(Official Video)` or `(MP3_320K)`, and checks the song length so it doesn't grab the wrong version.
+- **One tap for the whole library.** Batch download goes through everything that still needs lyrics. You can
+  leave it running in the background.
+- **Lots of sources, no setup.** Deezer, LRCLib, LyricsPlus, BetterLyrics, NetEase, Apple Music, Spotify and
+  QQ Music. No accounts or API keys. If one comes up empty, the next one is tried.
+- **Strong on non-English music.** Deezer is asked first and has licensed lyrics for a lot of Balkan and other
+  music the usual sources don't.
+- **Live lyrics for what's playing.** A Now playing card shows lyrics for the song playing in YouTube,
+  Spotify or any other app, with the current line highlighted.
+- **Built-in lyrics player** with a timing slider for songs where the lyrics run a little early or late.
+- **Your library, your way.** Choose which folders to scan, hide songs you never want lyrics for, and filter
+  by songs with or without lyrics.
+- **Fixes SnapTube lyrics files.** SnapTube's `_private.lrc` files are renamed so your player picks them up.
 
-### 🧠 Smart matching for bad metadata
-Most lyric apps just send your (often wrong) tags to a provider and accept the first result. MusicResync
-doesn't:
+## Install
 
-- **Multi-strategy candidate ladder** — tries tags, then `Artist - Title` / `Title - Artist` filename parsing,
-  primary-artist extraction (`Coby X Teodora` → `Coby`), remix/version loosening, and a title-only fallback.
-- **Noise stripping** — removes `(MP3_320K)`, `(Official Video)`, `[HD]`, `ft. …`, track numbers, underscores,
-  and other junk before searching.
-- **Confidence scoring** (title 40% · artist 30% · **duration 20%** · album 10%) with a **duration tiebreak** —
-  the track length from your file is matched against each candidate, so the *right* song wins and a wrong
-  "first result" (e.g. a random remix) is rejected.
-- **Tiers:** ≥85% auto-accept · 60–84% verify · <60% manual.
+1. Download `MusicResync-vX.Y.Z.apk` from the [latest release](../../releases/latest) and install it.
+2. Allow **All files access** when asked, so the app can read your music and save lyrics next to it.
 
-On a real corpus of messy SnapTube rips this lifts the auto-match rate from ~50% to **75–80%** — including
-non-English tracks — *before* any manual work.
+Needs Android 5.0 or newer. It installs alongside the original SongSync, not over it.
 
-### 📥 `_private.lrc` auto-fix (SnapTube)
-SnapTube saves lyrics as `Song(MP3_320K)_private.lrc`, which players like Samsung Music ignore because the name
-doesn't match the audio. MusicResync detects these on load and **strips the `_private` suffix automatically** —
-no network needed. Songs that already have correct `.lrc` files land straight in **Has Lyrics**.
+## Build from source
 
-### 🎤 Built-in synced lyrics player
-Tap any song with lyrics to open a **Samsung-Music-style player**: your audio plays while the current lyric
-line highlights and auto-scrolls. An **offset slider** lets you fine-tune timing — adjusting it seeks the track
-~2.5s back so you immediately hear and see whether the new offset lines up.
-
-### 🗂️ Organised + one-tap
-- Tabs: **All / Has Lyrics / No Lyrics** with live counts and green/red note indicators per song.
-- A centered **Batch download lyrics** button: one tap fetches lyrics for everything that needs them.
-- Pre-batch dialog keeps the two choices that matter up top (**skip songs that already have lyrics**,
-  **save `.lrc` next to the song**); everything else (embed into the file, **correct the metadata**,
-  auto-try other providers) lives under a single **More options** section.
-
-### 🛡️ Robust providers
-Every request uses **exponential backoff + jitter** (1→2→4→…→30s) with retries and a hard timeout, plus
-**graceful fallback**: if your selected provider errors or times out (e.g. a Spotify API change), MusicResync
-quietly falls through the others instead of throwing an error at you.
-
-| Provider | Auth | Notes |
-|---|---|---|
-| **Deezer** (tried first) | none | Licensed synced lyrics, huge catalogue — great for Balkan and other non-English music |
-| **LRCLib** | none | Community lyrics; returns duration + lyrics in one request |
-| **LyricsPlus / BetterLyrics** | none | Word-by-word lyrics where available |
-| **Netease** | none | Strong non-English coverage |
-| **Apple Music** | none | Best-effort fallback |
-| **Spotify** | none | Rotating keys fetched from several independent mirrors, cached locally |
-| **QQ Music** | none | Best-effort fallback |
-
-None of this blocks app launch — a provider going down never breaks the app.
-
----
-
-## 📲 Install
-
-1. Grab `MusicResync-vX.Y.Z.apk` from the [latest release](../../releases/latest).
-2. Sideload it (enable *install from unknown sources*). Android 5.0+ (minSdk 21).
-3. On first launch, grant **All files access** so the app can read your music and save `.lrc`
-   files next to it.
-
-> No setup or API keys required — none of the lyrics providers need an account. MusicResync uses its
-> own package id, so it installs **alongside** (not over) the original SongSync.
-
----
-
-## 🛠️ Build from source
-
-Requires the Android SDK and JDK 17–21 (Android Studio's bundled JBR works well).
+Needs the Android SDK and JDK 17–21.
 
 ```bash
 git clone https://github.com/DynamycSound/MusicResync
 cd MusicResync
-./gradlew :app:assembleDebug      # APK in app/build/outputs/apk/debug/
-./gradlew :app:testDebugUnitTest  # run the matching-engine unit tests
+./gradlew :app:assembleDebug
 ```
 
-The matching engine (`app/.../util/matching/`) is pure Kotlin and unit-tested on the JVM against real filenames
-and the live provider APIs — no emulator required to validate it.
+Run the tests with `./gradlew :app:testDebugUnitTest`.
 
-Releases are built and signed by CI with a committed **disposable** keystore (it exists only so
-updates install over each other — it protects nothing and signs nothing official).
+## Credits
 
----
-
-## 🙏 Credits
-
-MusicResync is a fork of **[SongSync](https://github.com/Lambada10/SongSync)** by Lambada10 and contributors —
-huge thanks for the foundation. Provider integrations are inspired by
-[syncedlyrics](https://github.com/moehmeni/syncedlyrics) and
+A fork of [SongSync](https://github.com/Lambada10/SongSync) by Lambada10 and contributors. Provider
+integrations are inspired by [syncedlyrics](https://github.com/moehmeni/syncedlyrics) and
 [spotify-lyrics-api](https://github.com/akashrchandran/spotify-lyrics-api).
 
-## 📄 License
-
-Licensed under the **GNU General Public License v3.0**, the same as the original SongSync. See [LICENSE](LICENSE).
+Licensed under the [GNU GPL v3](LICENSE), like the original SongSync.
