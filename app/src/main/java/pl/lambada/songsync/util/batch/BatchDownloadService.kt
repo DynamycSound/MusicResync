@@ -110,10 +110,12 @@ class BatchDownloadService : Service() {
      */
     private fun estimateTimeLeft(progress: BatchDownloadController.Progress): String? {
         val startedAt = BatchDownloadController.runStartedAt
-        if (startedAt <= 0L || progress.done < 3 || progress.total <= progress.done) return null
+        // Songs dropped with a skipped folder took no time, so they must not speed up the measured pace.
+        val worked = progress.done - progress.folderSkipped
+        if (startedAt <= 0L || worked < 3 || progress.total <= progress.done) return null
         val elapsed = System.currentTimeMillis() - startedAt
         if (elapsed < 10_000) return null
-        val leftMs = elapsed / progress.done * (progress.total - progress.done)
+        val leftMs = elapsed / worked * (progress.total - progress.done)
         return getString(R.string.batch_notification_eta, formatDuration(leftMs))
     }
 
@@ -135,6 +137,7 @@ class BatchDownloadService : Service() {
             add(getString(R.string.notif_line_no_lyrics, c.noLyricsCount))
             if (c.failedCount > 0) add(getString(R.string.notif_line_failed, c.failedCount))
             if (c.skippedCount > 0) add(getString(R.string.notif_line_skipped, c.skippedCount))
+            if (c.folderSkippedCount > 0) add(getString(R.string.notif_line_folder_skipped, c.folderSkippedCount))
             if (c.pendingUnsynced.isNotEmpty())
                 add(getString(R.string.notif_line_pending_unsynced, c.pendingUnsynced.size))
             if (c.runStartedAt > 0 && c.runFinishedAt > c.runStartedAt)

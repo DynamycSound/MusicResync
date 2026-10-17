@@ -20,6 +20,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
@@ -162,6 +163,11 @@ class HomeViewModel(
         BatchDownloadController.onSongResultListener = { path, info -> songMatchStatus[path] = info }
         BatchDownloadController.onMetadataCorrectedListener = { path, title, artist ->
             refreshSongMetadata(path, title, artist)
+        }
+        // Re-apply the folder filter when the hidden-folder list changes from outside the filters dialog (e.g.
+        // "Skip folder" + "Also hide this folder" on the batch screen), so the list and the next batch drop it.
+        viewModelScope.launch {
+            snapshotFlow { userSettingsController.blacklistedFolders }.drop(1).collect { filterSongs() }
         }
     }
 

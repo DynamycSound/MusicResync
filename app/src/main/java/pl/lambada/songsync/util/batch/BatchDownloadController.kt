@@ -24,6 +24,7 @@ import pl.lambada.songsync.util.ext.toLrcFile
 import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.matching.SongMatchInfo
 import pl.lambada.songsync.util.persistLyrics
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * App-scoped host for the batch lyrics download. The batch used to live in the Home screen's ViewModel scope,
@@ -61,7 +62,48 @@ object BatchDownloadController {
     var noLyricsCount by mutableIntStateOf(0); private set
     var failedCount by mutableIntStateOf(0); private set
     var skippedCount by mutableIntStateOf(0); private set
-    val processedCount get() = processed.size
+
+    /** Songs dropped because the user skipped their folder mid-run (issue #22). Not in [processed]: no page each. */
+    var folderSkippedCount by mutableIntStateOf(0); private set
+
+    /** Songs the run is done with: finished ones plus the ones dropped with a skipped folder. */
+    val processedCount get() = processed.size + folderSkippedCount
+
+    // --- "Skip this folder" (issue #22) ---------------------------------------------------------------------
+    // Concurrency: the engine is ONE sequential coroutine on Dispatchers.IO; the UI calls skipFolder() on the
+    // main thread. The engine only reads the concurrent set below (checked right before each song starts), so a
+    // skip takes effect from the next queued song on. The in-flight song is never interrupted: it finishes and
+    // is recorded normally, which rules out half-written .lrc files or tags.
+
+    /** File paths of this run's queue, in processing order. Written only in [start] (main thread). */
+    private var queuePaths: List<String?> = emptyList()
+
+    /** Index in the queue of the song the engine reached last (started or skipped); -1 before the first. */
+    var currentIndex by mutableIntStateOf(-1)
+        private set
+
+    /** Read by the engine thread. Holds normalized folder paths (see [FolderSkip]). */
+    private val skippedFolderSet: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /** The same folders as Compose state, for the UI. Written on the main thread only. */
+    var skippedFolders by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** How many songs of [folder] are still queued after the one being processed now. */
+    fun remainingInFolder(folder: String): Int =
+        FolderSkip.remainingInFolder(queuePaths, currentIndex + 1, folder)
+
+    /**
+     * Skips every song of [folder] that has not started yet, for this run only. The song in progress finishes
+     * normally. No-op when no run is active. Call from the main thread.
+     */
+    fun skipFolder(folder: String) {
+        if (!isRunning) return
+        val normalized = FolderSkip.normalize(folder)
+        if (normalized.isEmpty()) return
+        skippedFolderSet.add(normalized)
+        skippedFolders = skippedFolders + normalized
+    }
 
     /**
      * Plain lyrics that were FOUND for songs with no synced match but not saved (fallback toggle off).
@@ -90,7 +132,14 @@ object BatchDownloadController {
     fun requestOpen() { openRequests++ }
 
     /** Progress feed for the foreground service notification. */
-    data class Progress(val done: Int, val total: Int, val currentTitle: String?, val finished: Boolean = false)
+    data class Progress(
+        val done: Int,
+        val total: Int,
+        val currentTitle: String?,
+        val finished: Boolean = false,
+        /** Part of [done] dropped with a skipped folder (instant, so excluded from the pace estimate). */
+        val folderSkipped: Int = 0,
+    )
 
     private val _progress = MutableStateFlow(Progress(0, 0, null))
     val progressFlow: StateFlow<Progress> = _progress
@@ -112,6 +161,8 @@ object BatchDownloadController {
         pendingUnsynced.clear()
         autoAddUnsynced = settings.batchAddUnsyncedFallback
         syncedCount = 0; unsyncedCount = 0; noLyricsCount = 0; failedCount = 0; skippedCount = 0
+        clearFolderSkips()
+        queuePaths = songs.map { it.filePath }
         runSaveLrc = settings.batchSaveLrc
         runEmbedLyrics = settings.batchEmbedLyrics
         runSettings = settings
@@ -141,10 +192,19 @@ object BatchDownloadController {
                             pendingUnsynced.add(pending)
                         }
                     },
+                    shouldSkipSong = { song -> FolderSkip.isSkipped(song.filePath, skippedFolderSet) },
+                    onSongSkipped = {
+                        // Left untouched: no lookup, no write, no cached-state change, no history page.
+                        // currentSong stays on the last real song until the next one starts (microseconds).
+                        currentIndex++
+                        folderSkippedCount++
+                        publishProgress(currentSong?.title)
+                    },
                     onSongStarted = { song ->
+                        currentIndex++
                         currentSong = song
                         song.filePath?.let { onSongResultListener?.invoke(it, SongMatchInfo(LyricState.FETCHING)) }
-                        _progress.value = Progress(processed.size, total, song.title)
+                        publishProgress(song.title)
                     },
                     onSongResult = { song, info -> recordResult(song, info) },
                     onDownloadComplete = { status = Status.DONE },
@@ -158,9 +218,23 @@ object BatchDownloadController {
                 if (status == Status.RUNNING) status = Status.CANCELLED
                 currentSong = null
                 runFinishedAt = System.currentTimeMillis()
-                _progress.value = _progress.value.copy(done = processed.size, finished = true)
+                _progress.value = _progress.value.copy(
+                    done = processedCount, folderSkipped = folderSkippedCount, finished = true
+                )
             }
         }
+    }
+
+    private fun publishProgress(currentTitle: String?) {
+        _progress.value = Progress(processedCount, total, currentTitle, folderSkipped = folderSkippedCount)
+    }
+
+    private fun clearFolderSkips() {
+        folderSkippedCount = 0
+        currentIndex = -1
+        queuePaths = emptyList()
+        skippedFolderSet.clear()
+        skippedFolders = emptySet()
     }
 
     private fun recordResult(song: Song, info: SongMatchInfo) {
@@ -179,7 +253,7 @@ object BatchDownloadController {
             onSongResultListener?.invoke(path, info)
         }
         processed.add(ProcessedSong(song, info))
-        _progress.value = Progress(processed.size, total, currentSong?.title)
+        publishProgress(currentSong?.title)
     }
 
     /**
@@ -244,6 +318,7 @@ object BatchDownloadController {
         processedIndexByPath.clear()
         pendingUnsynced.clear()
         syncedCount = 0; unsyncedCount = 0; noLyricsCount = 0; failedCount = 0; skippedCount = 0
+        clearFolderSkips()
         _progress.value = Progress(0, 0, null)
     }
 

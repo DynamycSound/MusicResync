@@ -322,6 +322,10 @@ suspend fun downloadLyrics(
     // Read per song (not once) so "Add all unsynced" can flip it ON while the batch is running.
     addUnsyncedFallback: () -> Boolean = { false },
     onPlainAvailable: ((PendingPlainLyrics) -> Unit)? = null,
+    // Issue #22: asked right before each song starts, so a folder the user skips mid-run drops its remaining
+    // songs. A skipped song is never looked up or written: it is only reported through onSongSkipped.
+    shouldSkipSong: (Song) -> Boolean = { false },
+    onSongSkipped: (Song) -> Unit = {},
     onSongStarted: (Song) -> Unit = {},
     onProgressUpdate: (successCount: Int, noLyricsCount: Int, failedCount: Int, skippedCount: Int) -> Unit = { _, _, _, _ -> },
     onSongResult: (song: Song, info: SongMatchInfo) -> Unit = { _, _ -> },
@@ -345,6 +349,11 @@ suspend fun downloadLyrics(
         // Stop promptly when the user presses Stop: the batch coroutine is cancelled and this throws
         // CancellationException between songs, so no further lyrics are saved.
         coroutineContext.ensureActive()
+
+        if (shouldSkipSong(song)) {
+            onSongSkipped(song)
+            return@forEach
+        }
 
         onSongStarted(song)
 
