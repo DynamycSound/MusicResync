@@ -37,23 +37,12 @@
     <string name="contributors">Contribuitori</string>
     <string name="github" translatable="false">GitHub</string>
     <string name="telegram" translatable="false">Telegram</string>
-    <string name="bugs_or_suggestions_contact_us">Ați găsit un bug? Aveți o sugestie? Doriți să contribuiți? Nu ezitați să mă contactați in grupul meu Telegram.</string>
-    <string name="telegram_group">Grupul Telegram</string>
-    <string name="create_issue">Puteți de asemenea să creați o problemă pe github (link-ul de mai sus).</string>
     <string name="spotify_api" translatable="false">API-ul Spotify</string>
     <string name="source_code">Sursa Codului</string>
-    <string name="support">Suport</string>
-    <string name="contributor">Contribuitor</string>
     <string name="developer">Developer</string>
-    <string name="lead_developer">Lead developer</string>
-    <string name="close_app">Închidere aplicație</string>
     <string name="permission_denied">Acces refuzat</string>
     <string name="requires_higher_storage_permissions">Această aplicație necesită permisiunea la accesul de stocare pentru scanarea bibliotecii dvs. de muzică și salvarea versurilor.</string>
     <string name="already_granted_restart">Permisiunea a fost deja acordata?? Încercați să re-deschideți aplicația.</string>
-    <string name="no_internet_connection">Fără conexiune la internet</string>
-    <string name="you_need_internet_connection">Aveți nevoie de conexiune la internet pentru a utiliza această aplicație.</string>
-    <string name="check_your_connection">Vă rugăm să verificați conexiunea la internet și să încercați din nou.</string>
-    <string name="if_connected_spotify_down">Dacă sunteți conectat, Spotify ar putea să fie jos. Vă rugăm să încercați mai târziu.</string>
     <string name="home">Acasă</string>
     <string name="about">Despre</string>
     <string name="song_name_no_args">Numele melodiei</string>

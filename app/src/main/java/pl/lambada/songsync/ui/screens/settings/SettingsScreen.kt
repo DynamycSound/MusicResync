@@ -87,10 +87,11 @@ fun SettingsScreen(
             }
 
             item { SettingsHeadLabel(label = stringResource(id = R.string.provider)) }
+            // Most-used first: fast matching affects every search; the rest are format tweaks.
             item {
-                RomanizationSwitch(
-                    selected = userSettingsController.includeRomanization,
-                    onToggle = { userSettingsController.updateIncludeRomanization(it) }
+                FastModeSwitch(
+                    selected = userSettingsController.singleFastMode,
+                    onToggle = { userSettingsController.updateSingleFastMode(it) }
                 )
             }
             item {
@@ -100,15 +101,15 @@ fun SettingsScreen(
                 )
             }
             item {
-                OffsetModeSwitch(
-                    selected = userSettingsController.directlyModifyTimestamps,
-                    onToggle = { userSettingsController.updateDirectlyModifyTimestamps(it) }
+                RomanizationSwitch(
+                    selected = userSettingsController.includeRomanization,
+                    onToggle = { userSettingsController.updateIncludeRomanization(it) }
                 )
             }
             item {
-                FastModeSwitch(
-                    selected = userSettingsController.singleFastMode,
-                    onToggle = { userSettingsController.updateSingleFastMode(it) }
+                OffsetModeSwitch(
+                    selected = userSettingsController.directlyModifyTimestamps,
+                    onToggle = { userSettingsController.updateDirectlyModifyTimestamps(it) }
                 )
             }
             item { SpotifySecretsStatus() }

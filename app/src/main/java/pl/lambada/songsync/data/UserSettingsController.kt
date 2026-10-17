@@ -50,9 +50,6 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     // every screen that reads these as plain state, so it's intentionally out of scope for this change.)
     private val prefs: Preferences = runBlocking(Dispatchers.IO) { dataStore.data.first() }
 
-    var embedLyricsIntoFiles by mutableStateOf(prefs[embedKey] ?: false)
-        private set
-
     var passedInit by mutableStateOf(prefs[passedInitKey] ?: false)
         private set
 
@@ -147,9 +144,10 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     var batchFastMode by mutableStateOf(prefs[batchFastModeKey] ?: true)
         private set
 
-    // Fast mode for the single-song search: race only the top providers with a short timeout. Off by default —
-    // the full chain (plus the last-resort rescue) finds more, fast mode answers sooner.
-    var singleFastMode by mutableStateOf(prefs[singleFastModeKey] ?: false)
+    // Fast mode for the single-song search: every enabled provider still races, just with tighter per-provider
+    // budgets and fewer retries (MatchConfig.fast). On by default, matching batchFastMode; a choice the user
+    // stored explicitly (on or off) is kept.
+    var singleFastMode by mutableStateOf(prefs[singleFastModeKey] ?: true)
         private set
 
     var sortBy by mutableStateOf(
@@ -157,11 +155,6 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
             .find { it.name == (prefs[sortByKey] ?: SortValues.TITLE.name) }!!
     )
         private set
-
-    fun updateEmbedLyrics(to: Boolean) {
-        dataStore.set(embedKey, to)
-        embedLyricsIntoFiles = to
-    }
 
     fun updatePassedInit(to: Boolean) {
         dataStore.set(passedInitKey, to)
@@ -295,7 +288,6 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     }
 }
 
-private val embedKey = booleanPreferencesKey("embed_lyrics")
 private val passedInitKey = booleanPreferencesKey("passed_init")
 private val selectedProviderKey = stringPreferencesKey("provider")
 private val blacklistedFoldersKey = stringPreferencesKey("blacklist")

@@ -37,23 +37,12 @@
     <string name="contributors">Katkıda Bulunanlar</string>
     <string name="github" translatable="false">GitHub</string>
     <string name="telegram" translatable="false">Telegram</string>
-    <string name="bugs_or_suggestions_contact_us">Bir hata mı buldunuz? Öneriniz mi var? Katkıda bulunmak mı istiyorsunuz? Telegram grubumdan bana ulaşmaktan çekinmeyin.</string>
-    <string name="telegram_group">Telegram grubu</string>
-    <string name="create_issue">Ayrıca GitHub’da bir sorun oluşturabilirsiniz (yukarıdaki bağlantı).</string>
     <string name="spotify_api" translatable="false">Spotify API</string>
     <string name="source_code">Kaynak kodu</string>
-    <string name="support">Destek</string>
-    <string name="contributor">Katkıda Bulunan</string>
     <string name="developer">Geliştirici</string>
-    <string name="lead_developer">Baş Geliştirici</string>
-    <string name="close_app">Uygulamayı kapat</string>
     <string name="permission_denied">İzin reddedildi</string>
     <string name="requires_higher_storage_permissions">Bu uygulama, müzik kütüphanenizi taramak ve şarkı sözlerini kaydetmek için depolama erişimi gerektirir.</string>
     <string name="already_granted_restart">Zaten izin verildi mi? Uygulamayı yeniden başlatmayı deneyin.</string>
-    <string name="no_internet_connection">İnternet bağlantısı yok</string>
-    <string name="you_need_internet_connection">Bu uygulamayı kullanmak için internet bağlantısına ihtiyacınız var.</string>
-    <string name="check_your_connection">Lütfen bağlantınızı kontrol edin ve tekrar deneyin.</string>
-    <string name="if_connected_spotify_down">Bağlıysanız, Spotify kapalı olabilir. Lütfen daha sonra tekrar deneyin.</string>
     <string name="home">Ana Sayfa</string>
     <string name="about">Hakkında</string>
     <string name="song_name_no_args">Şarkı adı</string>
@@ -115,12 +104,9 @@
     <string name="open_website">Web sitesini aç</string>
     <string name="provider">Şarkı sözü sağlayıcısı</string>
     <string name="provider_summary">Lütfen aşağıdan şarkı sözü sağlayıcısını seçin</string>
-    <string name="ignore">Yoksay</string>
     <string name="internal_error">Dahili hata: %s</string>
     <string name="disable_marquee">Marquee Metnini Devre Dışı Bırak</string>
     <string name="disable_marquee_summary">Uygulamadaki kayan metin animasyonunu devre dışı bırak</string>
-    <string name="include_translation">Çeviriyi dahil et</string>
-    <string name="include_translation_summary">Netease sağlayıcısından şarkı sözleri alınırken çevrilmiş şarkı sözlerini dahil et</string>
     <string name="embed_lyrics_in_file">Şarkı sözlerini dosyaya göm</string>
     <string name="embedded_lyrics_in_file">Şarkı sözleri şarkı dosyasına gömüldü</string>
     <string name="embed_non_local_song_error">Şarkı sözlerini yerel olmayan bir dosyaya gömmeye çalıştınız. İşlem iptal ediliyor.</string>
@@ -144,9 +130,6 @@
     <string name="settings">Ayarlar</string>
     <string name="date_added">Ekleme tarihi</string>
     <string name="date_modified">Değiştirilme tarihi</string>
-    <string name="translation">Çeviri</string>
-    <string name="help_us_translate">Uygulamayı dilinize çevirmemize yardım edin!</string>
-    <string name="translation_website">Weblate’i Aç</string>
     <string name="showing_lyrics_for">Şarkı sözleri gösteriliyor:</string>
     <string name="by">tarafından</string>
     <string name="accept">Kabul et</string>

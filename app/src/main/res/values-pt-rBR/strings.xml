@@ -37,23 +37,12 @@
     <string name="contributors">Contribuidores</string>
     <string name="github" translatable="false">GitHub</string>
     <string name="telegram" translatable="false">Telegram</string>
-    <string name="bugs_or_suggestions_contact_us">Encontrou um bug? Tem uma sugestão? Quer contribuir? Sinta-se à vontade para entrar em contato no meu grupo do Telegram.</string>
-    <string name="telegram_group">Grupo do Telegram</string>
-    <string name="create_issue">Você também pode criar um problema no GitHub (link acima).</string>
     <string name="spotify_api" translatable="false">Spotify API</string>
     <string name="source_code">Código-fonte</string>
-    <string name="support">Suporte</string>
-    <string name="contributor">Contribuidor</string>
     <string name="developer">Desenvolvedor</string>
-    <string name="lead_developer">Desenvolvedor principal</string>
-    <string name="close_app">Fechar aplicativo</string>
     <string name="permission_denied">Permissão negada</string>
     <string name="requires_higher_storage_permissions">Este aplicativo requer acesso ao armazenamento para escanear sua biblioteca de músicas e salvar letras.</string>
     <string name="already_granted_restart">Já concedido? Tente reiniciar o aplicativo.</string>
-    <string name="no_internet_connection">Sem conexão com a internet</string>
-    <string name="you_need_internet_connection">Você precisa de conexão com a internet para usar este aplicativo.</string>
-    <string name="check_your_connection">Por favor, verifique sua conexão e tente novamente.</string>
-    <string name="if_connected_spotify_down">Se você está conectado, o Spotify pode estar fora do ar. Por favor, tente novamente mais tarde.</string>
     <string name="home">Início</string>
     <string name="about">Sobre</string>
     <string name="song_name_no_args">Nome da música</string>
@@ -115,12 +104,9 @@
     <string name="open_website">Abrir site</string>
     <string name="provider">Provedor de letras</string>
     <string name="provider_summary">Por favor, selecione o provedor de letras abaixo</string>
-    <string name="ignore">Ignorar</string>
     <string name="internal_error">Erro interno: %s</string>
     <string name="disable_marquee">Desativar texto em movimento</string>
     <string name="disable_marquee_summary">Desativar animação de texto em movimento no aplicativo</string>
-    <string name="include_translation">Incluir tradução</string>
-    <string name="include_translation_summary">Incluir letras traduzidas ao obter letras de músicas do provedor Netease</string>
     <string name="embed_lyrics_in_file">Incorporar letras no arquivo</string>
     <string name="embed_non_local_song_error">Você tentou incorporar a letra em um arquivo não local. Abortando operação.</string>
     <string name="duration">Duração</string>
@@ -143,9 +129,6 @@
     <string name="settings">­Configurações</string>
     <string name="date_added">Data adicionada</string>
     <string name="date_modified">Data de modificação</string>
-    <string name="translation">Tradução</string>
-    <string name="help_us_translate">Ajude-nos a traduzir o aplicativo para o seu idioma!</string>
-    <string name="translation_website">Abra o Weblate</string>
     <string name="showing_lyrics_for">Mostrando letras para</string>
     <string name="by">por</string>
     <string name="accept">Aceitar</string>

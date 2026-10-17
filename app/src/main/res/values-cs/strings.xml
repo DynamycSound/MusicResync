@@ -16,15 +16,11 @@
     <string name="save_lrc_file">Uložit .lrc soubor</string>
     <string name="about_songsync">O MusicResync</string>
     <string name="source_code">Zdrojový kód</string>
-    <string name="support">Podpora</string>
-    <string name="close_app">Zavřít aplikaci</string>
     <string name="developer">Vývojář</string>
     <string name="get_lyrics">Získat text</string>
     <string name="this_track_has_no_lyrics">Táto píseň nemá text</string>
     <string name="ok">Ok</string>
     <string name="downloading_lyrics">Stažení textu</string>
-    <string name="telegram_group">Telegram skupina</string>
-    <string name="no_internet_connection">Žádný přístup k internetu</string>
     <string name="song_name_no_args">Jméno písně</string>
     <string name="artist_name_no_args">Jméno umělce</string>
     <string name="lyrics_copied_to_clipboard">Text zkopírován do schránky</string>
@@ -39,7 +35,6 @@
     <string name="select_all">Vybrat vše</string>
     <string name="no_lyrics_only">Jenom ukázat písně beze jejich LRC souborů</string>
     <string name="save">Uložit</string>
-    <string name="ignore">Ignorovat</string>
     <string name="artist">Umělec</string>
     <string name="duration">Délka</string>
     <string name="sort">Sezaření</string>
@@ -51,21 +46,16 @@
     <string name="unknown_error_occurred">Došlo ke neznámé chybě</string>
     <string name="_continue">Pokračovat</string>
     <string name="song_name_not_provided">Jméno písně nebylo zadáno</string>
-    <string name="translation">Překlad</string>
     <string name="date_added">Datum přidání</string>
     <string name="date_modified">Datum změny</string>
-    <string name="help_us_translate">Pomožte nám přeložit tuto aplikaci do vašeho jazyka!</string>
-    <string name="translation_website">Otevřít Weblate</string>
     <string name="init_screen_title">Vítej v MusicResync!</string>
     <string name="app_version">Verze aplikace: %1$s</string>
-    <string name="you_need_internet_connection">Potřebujete přístup ke internetu pro používání této aplikace.</string>
     <string name="permission_denied">Přístup odepřen</string>
     <string name="album">Album</string>
     <string name="batch_download_lyrics">Hromadné stahování textů</string>
     <string name="download">Stáhnout</string>
     <string name="search">Hledat</string>
     <string name="copy_lyrics_to_clipboard">Zkopírovat text do schránky</string>
-    <string name="contributor">Přispěvatel</string>
     <string name="contributors">Přispěvatelé</string>
     <string name="success_failed">Úspěch: %1$d, Žádný text: %2$d, Selhalo: %3$d</string>
     <string name="please_do_not_close_the_app_this_may_take_a_while">Prosím nezavírejte aplikaci, toto může trvat dlouho</string>
@@ -83,9 +73,7 @@
         <item quantity="few">%1$d písně</item>
         <item quantity="other">%1$d písní</item>
     </plurals>
-    <string name="lead_developer">Vedoucí vývojář</string>
     <string name="unknown">Neznámé</string>
-    <string name="check_your_connection">Prosím zkontrolujte vaše připojení a zkuste to znova.</string>
     <string name="no_lyrics">Žádný text: %1$d</string>
     <string name="ignore_folders">Ignorovat složky</string>
     <string name="already_granted_restart">Už uděleno? Zkuste restartovat aplikaci.</string>
@@ -107,7 +95,6 @@
     <string name="accept">Přijmout</string>
     <string name="we_are_open_source">MusicResync je open-source projekt. Můžete najít zdrojový kód na GitHubu.</string>
     <string name="view_on_github">Zhlédnout na GitHubu</string>
-    <string name="bugs_or_suggestions_contact_us">Našli jste chybu? Máte nápad? Chcete přispět? Neváhejte mě kontaktovat ve moji Telegram skupině.</string>
     <string name="filters">Filtry</string>
     <string name="synced_lyrics">Získat Nesynchronizované Texty</string>
     <string name="synced_lyrics_summary">Zda získat nesynchronizované texty od Musixmatch když nebyly nalezené synchronizované texty.</string>
@@ -119,9 +106,7 @@
     <string name="extra_what_is_songsync">Můžete také hledat pro dané písně a získat její text (a uložit ho do stažených).</string>
     <string name="spotify_for_developers">Spotify pro Vývojáře</string>
     <string name="how_we_get_lyrics">MusicResync používá SpotifyLyrics API ke získání textů pro písně. Můžete zjistit více informací o SpotifyLyrics API na jejich GitHub stránkách.</string>
-    <string name="create_issue">Můžete také vytvořit problém/issue na GitHubu (odkaz nahoře).</string>
     <string name="requires_higher_storage_permissions">Táto aplikace potřebuje přístup k uložišti pro skenování vaší hudební knihovnu a ukládání textů.</string>
-    <string name="if_connected_spotify_down">Jestli jste připojen, asi Spotify nereaguje. Zkuste to prosím později znovu.</string>
     <string name="way_to_get_token">Způsob jak získat Spotify token</string>
     <string name="thanks_to">Díky kvůli</string>
     <string name="song_path_description">Ukázat cestu pro soubor písně ve seznamu písní</string>
@@ -142,8 +127,6 @@
     <string name="sd_card_path_set_successfully">Umístění pro SD kartu nastaveno úspěšně!</string>
     <string name="clear_sd_card_path">Vymazat</string>
     <string name="set_sd_path_warn">Používáte starší verzi Android. Ujistěte se, že máte nastavené umístění pro SD kartu ve nastavení. Jestli ne, prosím zrušte tuto zprávu a nastavte umístění.</string>
-    <string name="include_translation">Zahrnout překlady</string>
-    <string name="include_translation_summary">Zahrnout překlady textů když se získává text ze poskytovatele Netease</string>
     <string name="notification_access_description">Toto je použito pro získávání písně která se teď přehrává na vašem zařízení. Aplikace nečte jinačí notifikace.</string>
     <string name="disable_marquee">Vypnout Posouvající Text</string>
     <string name="disable_marquee_summary">Vypnout posouvající text v aplikaci</string>

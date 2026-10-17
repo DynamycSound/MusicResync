@@ -2,7 +2,6 @@ package pl.lambada.songsync.ui.screens.settings.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -13,9 +12,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,26 +49,23 @@ fun SpotifySecretsStatus() {
         else -> MaterialTheme.colorScheme.primary
     }
 
-    Column(modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)) {
-        Text(
-            text = stringResource(R.string.spotify_secrets_title),
-            style = MaterialTheme.typography.titleMedium
-        )
-        Spacer(Modifier.padding(top = 2.dp))
+    // Same type scale as the SwitchItem rows around it (bodyLarge title, 12sp supporting text) so this block
+    // doesn't read as a heading in the middle of the list.
+    Column(modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 16.dp, bottom = 4.dp)) {
+        Text(text = stringResource(R.string.spotify_secrets_title))
         Text(
             text = stringResource(R.string.spotify_secrets_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            modifier = Modifier.padding(top = 2.dp),
         )
-        Spacer(Modifier.padding(top = 6.dp))
-        Row {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = statusText,
                 style = MaterialTheme.typography.bodyMedium,
                 color = statusColor,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(top = 8.dp)
+                modifier = Modifier.weight(1f)
             )
             TextButton(
                 enabled = !refreshing,
