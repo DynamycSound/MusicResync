@@ -9,7 +9,7 @@
 ![minSdk](https://img.shields.io/badge/minSdk-21-1E1E27.svg)
 ![Kotlin](https://img.shields.io/badge/Kotlin-100%25-8A5CF6.svg?logo=kotlin)
 [![Release](https://img.shields.io/github/v/release/DynamycSound/MusicResync?color=8A5CF6)](../../releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/DynamycSound/MusicResync/total?color=1E1E27)](../../releases)
+[![Downloads](https://img.shields.io/github/downloads/DynamycSound/MusicResync/total?label=downloads&color=1E1E27)](../../releases)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-8A5CF6.svg)](../../pulls)
 
 <img src="docs/screenshots/home.png" width="30%" />&nbsp;
