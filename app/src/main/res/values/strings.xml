@@ -263,6 +263,19 @@
     <string name="notif_line_no_lyrics">No lyrics found: %1$d</string>
     <string name="notif_line_failed">Errors: %1$d</string>
     <string name="notif_line_skipped">Skipped (already had lyrics): %1$d</string>
+    <string name="notif_line_folder_skipped">Skipped (folder skipped): %1$d</string>
+    <!-- Skip this folder (issue #22) -->
+    <string name="batch_skip_folder">Skip folder</string>
+    <string name="batch_folder_last_song">Last song from this folder</string>
+    <plurals name="batch_folder_queued">
+        <item quantity="one">%1$d more song queued from this folder</item>
+        <item quantity="other">%1$d more songs queued from this folder</item>
+    </plurals>
+    <string name="batch_folder_skipping">Skipping the rest of this folder</string>
+    <string name="skip_folder_dialog_title">Skip this folder?</string>
+    <string name="skip_folder_dialog_message">Skip the rest of “%1$s”? %2$s left in it will be skipped.</string>
+    <string name="skip_folder_dialog_current">The song being searched right now will finish first.</string>
+    <string name="skip_folder_hide_future">Also hide this folder from future scans</string>
     <string name="notif_line_pending_unsynced">%1$d plain lyrics ready to add. Tap to review.</string>
     <string name="notif_tap_for_details">Tap to see the full results</string>
     <string name="batch_finished_in">Finished in %1$s</string>

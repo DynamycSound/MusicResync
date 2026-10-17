@@ -103,7 +103,7 @@ fun Navigator(
                 )
             }
             animatedComposable<ScreenBatchProgress> {
-                BatchProgressScreen(onNavigateBack = { navController.popBackStack() })
+                BatchProgressScreen(userSettingsController, onNavigateBack = { navController.popBackStack() })
             }
             animatedComposable<ScreenSettings> {
                 SettingsScreen(

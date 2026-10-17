@@ -34,6 +34,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -42,8 +43,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -72,7 +76,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,8 +93,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.core.app.NotificationManagerCompat
 import pl.lambada.songsync.R
+import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.util.batch.BatchDownloadController
+import pl.lambada.songsync.util.batch.FolderSkip
 import pl.lambada.songsync.util.batch.BatchDownloadController.Status
 import pl.lambada.songsync.util.batch.BatchDownloadService
 import pl.lambada.songsync.util.ext.toLrcFile
@@ -106,7 +114,7 @@ import pl.lambada.songsync.util.showToast
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BatchProgressScreen(onNavigateBack: () -> Unit) {
+fun BatchProgressScreen(userSettingsController: UserSettingsController, onNavigateBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val controller = BatchDownloadController
@@ -130,6 +138,9 @@ fun BatchProgressScreen(onNavigateBack: () -> Unit) {
     var showKeepAliveDialog by remember { mutableStateOf(false) }
     var lyricsSheetSong by remember { mutableStateOf<Song?>(null) }
     var categorySheet by remember { mutableStateOf<ResultCategory?>(null) }
+    // The folder is captured when "Skip folder" is tapped, so the dialog keeps acting on that folder even if the
+    // run moves on to another one before the user confirms.
+    var skipFolderTarget by remember { mutableStateOf<String?>(null) }
 
     // The user is looking at the results now; the summary notification has served its purpose.
     LaunchedEffect(controller.status) {
@@ -203,6 +214,17 @@ fun BatchProgressScreen(onNavigateBack: () -> Unit) {
                 }
             }
 
+            // Folder of the song being processed + "Skip folder" (issue #22). Only while a run is active.
+            val currentFolder = if (controller.isRunning) FolderSkip.folderOf(controller.currentSong?.filePath) else null
+            if (currentFolder != null) {
+                CurrentFolderCard(
+                    folder = currentFolder,
+                    remaining = controller.remainingInFolder(currentFolder),
+                    skipping = currentFolder in controller.skippedFolders,
+                    onSkipClick = { skipFolderTarget = currentFolder },
+                )
+            }
+
             Spacer(Modifier.height(16.dp))
 
             CountersGrid(controller, onCategoryClick = { categorySheet = it })
@@ -268,9 +290,10 @@ fun BatchProgressScreen(onNavigateBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.weight(1f))
-                    if (controller.skippedCount > 0) {
+                    val skipped = controller.skippedCount + controller.folderSkippedCount
+                    if (skipped > 0) {
                         Text(
-                            text = stringResource(R.string.batch_skipped_label, controller.skippedCount),
+                            text = stringResource(R.string.batch_skipped_label, skipped),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -326,6 +349,138 @@ fun BatchProgressScreen(onNavigateBack: () -> Unit) {
             onSongClick = { song -> lyricsSheetSong = song },
         )
     }
+
+    // Nothing left to skip once the run is over: drop a dialog that is still open.
+    LaunchedEffect(controller.isRunning) {
+        if (!controller.isRunning) skipFolderTarget = null
+    }
+    skipFolderTarget?.let { folder ->
+        SkipFolderDialog(
+            folder = folder,
+            remaining = controller.remainingInFolder(folder),
+            onDismiss = { skipFolderTarget = null },
+            onConfirm = { hideInFuture ->
+                skipFolderTarget = null
+                controller.skipFolder(folder)
+                if (hideInFuture) {
+                    val hidden = userSettingsController.blacklistedFolders
+                    if (folder !in hidden) userSettingsController.updateBlacklistedFolders(hidden + folder)
+                }
+            },
+        )
+    }
+}
+
+/** Where the current song lives, how much of that folder is still queued, and the "Skip folder" action. */
+@Composable
+private fun CurrentFolderCard(folder: String, remaining: Int, skipping: Boolean, onSkipClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.Folder,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = FolderSkip.displayName(folder),
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = when {
+                        skipping -> stringResource(R.string.batch_folder_skipping)
+                        remaining > 0 -> pluralStringResource(R.plurals.batch_folder_queued, remaining, remaining)
+                        else -> stringResource(R.string.batch_folder_last_song)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            // Nothing queued from this folder (or already skipping it): skipping would do nothing, so no button.
+            if (!skipping && remaining > 0) {
+                Spacer(Modifier.width(8.dp))
+                FilledTonalButton(onClick = onSkipClick) {
+                    Icon(Icons.Filled.SkipNext, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.batch_skip_folder))
+                }
+            }
+        }
+    }
+}
+
+/** Confirmation for "Skip folder", so a misclick can't drop a whole folder. */
+@Composable
+private fun SkipFolderDialog(
+    folder: String,
+    remaining: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (hideInFuture: Boolean) -> Unit,
+) {
+    var hideInFuture by remember(folder) { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.SkipNext, contentDescription = null) },
+        title = { Text(stringResource(R.string.skip_folder_dialog_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    stringResource(
+                        R.string.skip_folder_dialog_message,
+                        FolderSkip.displayName(folder),
+                        pluralStringResource(R.plurals.songs_count, remaining, remaining),
+                    )
+                )
+                Text(
+                    text = folder,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(R.string.skip_folder_dialog_current),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .toggleable(
+                            value = hideInFuture,
+                            role = Role.Checkbox,
+                            onValueChange = { hideInFuture = it },
+                        )
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = hideInFuture, onCheckedChange = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.skip_folder_hide_future), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(hideInFuture) }) { Text(stringResource(R.string.batch_skip_folder)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 /** The tappable result buckets on the progress screen. Each opens a drawer listing the affected songs. */
