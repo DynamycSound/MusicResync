@@ -50,6 +50,9 @@ object NowPlayingLogic {
     )
     private val bracketed = Regex("""[(\[][^)\]]*[)\]]""")
 
+    /** A producer credit trailing a video title outside brackets: "MARTINI Prod. by Jhinsen". */
+    private val trailingProducer = Regex("""\s+(?:prod\.|prod\s+by|produced\s+by)\s*\S.*$""", RegexOption.IGNORE_CASE)
+
     private fun isVersionSuffix(s: String): Boolean = versionWords.containsMatchIn(bracketed.replace(s, " "))
 
     /**
@@ -64,6 +67,7 @@ object NowPlayingLogic {
         val channelless = TextMatch.stripChannelSuffix(vevoSuffix.replace(rawArtist, "")).trim()
         val cleanArtist = if (TextMatch.isJunkArtist(channelless)) "" else channelless
         val cleanTitle = TextMatch.cleanTitleArtist(title).ifBlank { title.trim() }
+            .let { t -> trailingProducer.replace(t, "").ifBlank { t } }
 
         val parts = cleanTitle.split(dashSplit, limit = 2).map { it.trim() }
         if (parts.size == 2 && parts.all { it.isNotBlank() }) {

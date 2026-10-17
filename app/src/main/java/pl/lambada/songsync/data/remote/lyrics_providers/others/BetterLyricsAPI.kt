@@ -12,6 +12,10 @@ import pl.lambada.songsync.util.networking.Ktor.json
  * BetterLyrics provider (lyrics-api.boidu.dev): serves Apple-style TTML with word-level timing behind a direct
  * title/artist(/duration/album) query — no search/offset pagination. The TTML body is converted to the app's
  * enhanced-LRC dialect by [TtmlLyricsParser].
+ *
+ * Since 2026 the service only answers keyless requests from its cache (songs someone already looked up) and wants
+ * an X-API-Key, which isn't handed out, for everything else. Those misses go to [LrcRedAPI], the open catalogue
+ * BetterLyrics itself answers from, so the provider keeps working for uncached songs.
  */
 class BetterLyricsAPI {
     private val baseURL = "https://lyrics-api.boidu.dev"
@@ -38,9 +42,9 @@ class BetterLyricsAPI {
             if (!album.isNullOrBlank()) parameter("al", album)
         }
         val body = response.bodyAsText(Charsets.UTF_8)
-        if (response.status.value !in 200..299 || body.isBlank()) return null
-
-        val ttml = runCatching { json.decodeFromString<TtmlResponse>(body).ttml }.getOrNull()
+        val ttml = body.takeIf { response.status.value in 200..299 && it.isNotBlank() }
+            ?.let { runCatching { json.decodeFromString<TtmlResponse>(it).ttml }.getOrNull() }
+            ?: LrcRedAPI.getTtml(title, artist, durationSec)
             ?: return null
         val lines = TtmlLyricsParser.parse(ttml)
         return TtmlLyricsParser.toLrc(lines, multiPersonWordByWord)

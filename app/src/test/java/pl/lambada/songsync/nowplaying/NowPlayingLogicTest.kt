@@ -101,6 +101,15 @@ class NowPlayingLogicTest {
     }
 
     @Test
+    fun `unbracketed producer credit is dropped`() {
+        assertEquals(
+            NowPlayingQuery("MARTINI", "HENNY"),
+            NowPlayingLogic.searchQuery("HENNY - MARTINI (OFFICIAL VIDEO) Prod. by Jhinsen", "Generacija Zed"),
+        )
+        assertEquals(NowPlayingQuery("Producer", "Someone"), NowPlayingLogic.searchQuery("Producer", "Someone"))
+    }
+
+    @Test
     fun `version suffixes after a dash stay part of the title`() {
         assertEquals(
             NowPlayingQuery("Love Story - Taylor's Version", "Taylor Swift"),

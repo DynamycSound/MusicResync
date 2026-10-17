@@ -19,15 +19,13 @@ import pl.lambada.songsync.util.networking.Ktor.json
 class LyricsPlusAPI {
 
     companion object {
-        // Mirror list from the YouLyPlus project (see issue #4). The Cloudflare-workers and old Vercel
-        // deployments are intentionally last: one is capped at 100k requests/day, the other is often disabled.
+        // Mirror list from the YouLyPlus project (see issue #4), checked 2026-10-17. The two Vercel deployments
+        // (lyricsplus-seven, lyrics-plus-backend) are disabled by their owners and the prjktla Cloudflare worker
+        // is gone, so they were dropped instead of costing every lookup three dead round trips.
         private val BASE_URLS = listOf(
             "https://lyricsplus.prjktla.my.id",   // main server
             "https://lyricsplus.binimum.org",     // binimum's alternate server
             "https://lyricsplus.atomix.one",      // meow's mirror
-            "https://lyricsplus-seven.vercel.app",// jigen's mirror
-            "https://lyricsplus.prjktla.workers.dev",
-            "https://lyrics-plus-backend.vercel.app",
         )
 
         @Volatile

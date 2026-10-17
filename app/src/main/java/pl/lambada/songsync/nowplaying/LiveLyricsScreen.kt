@@ -1,10 +1,10 @@
 package pl.lambada.songsync.nowplaying
 
-import android.graphics.Bitmap
+import android.content.Context
 import android.media.session.MediaController
 import android.media.session.PlaybackState
-import android.os.Build
 import android.os.SystemClock
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -40,12 +40,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.MusicOff
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,7 +57,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -65,6 +66,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -97,14 +99,41 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import pl.lambada.songsync.R
 import pl.lambada.songsync.domain.model.Song
+import pl.lambada.songsync.ui.components.ArtworkBackdrop
+import pl.lambada.songsync.ui.components.PanelButton
+import pl.lambada.songsync.ui.components.SourceRow
+import pl.lambada.songsync.ui.components.artworkPalette
+import pl.lambada.songsync.ui.components.artworkPlayButtonColors
+import pl.lambada.songsync.ui.components.PanelSide
+import pl.lambada.songsync.ui.components.PopupPanel
+import pl.lambada.songsync.ui.components.TimingPanel
+import pl.lambada.songsync.ui.components.TimingResetButton
+import pl.lambada.songsync.ui.components.WaveScrubber
+import pl.lambada.songsync.ui.components.formatOffsetSeconds
 import pl.lambada.songsync.util.LyricLine
+import pl.lambada.songsync.util.Providers
 import pl.lambada.songsync.util.currentLineIndex
+import pl.lambada.songsync.util.matching.TextMatch
 
 /** Lines light up this much before their timestamp, so the highlight never feels late. */
 private const val LINE_LEAD_MS = 200L
 
 /** After the user scrolls the lyrics by hand, auto-follow waits this long before taking over again. */
 private const val MANUAL_SCROLL_HOLD_MS = 4_000L
+
+/** How far the timing panel can move live lyrics either way. */
+private const val LIVE_OFFSET_RANGE_MS = 5_000f
+
+/**
+ * Timing fixes the user made for streamed songs, remembered per song (a video's intro or a different cut is
+ * the same every time it plays). Keyed by the cleaned title and artist, so the same song from another app matches.
+ */
+private fun offsetPrefs(context: Context) = context.getSharedPreferences("live_lyrics_offsets", Context.MODE_PRIVATE)
+
+private fun offsetKey(track: NowPlayingTrack): String {
+    val query = NowPlayingLogic.searchQuery(track.title, track.artist)
+    return TextMatch.normalizeForCompare(query.title) + "|" + TextMatch.normalizeForCompare(query.artist)
+}
 
 /**
  * Live lyrics for the song another app is playing (Spotify, YouTube, Samsung Music…), opened from the Home
@@ -170,19 +199,26 @@ fun LiveLyricsScreen(
         }
     }
 
-    val accent = remember(current?.artwork) { current?.artwork?.let(::averageColor) }
-    val background = MaterialTheme.colorScheme.surface
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(background)
-            .background(
-                Brush.verticalGradient(
-                    0f to (accent ?: MaterialTheme.colorScheme.primaryContainer).copy(alpha = 0.55f),
-                    0.65f to Color.Transparent,
-                )
-            )
-    ) {
+    // Positive: lines show sooner. Loaded per song, saved when the user lets go of the control.
+    val offsetKey = remember(current?.title, current?.artist) { current?.let(::offsetKey) }
+    var offsetMs by remember(offsetKey) {
+        mutableFloatStateOf(offsetKey?.let { offsetPrefs(context).getFloat(it, 0f) } ?: 0f)
+    }
+    fun saveOffset() {
+        val key = offsetKey ?: return
+        offsetPrefs(context).edit().apply {
+            if (offsetMs == 0f) remove(key) else putFloat(key, offsetMs)
+        }.apply()
+    }
+    // One side panel open at a time.
+    var openPanel by remember { mutableStateOf<PanelSide?>(null) }
+    BackHandler(enabled = openPanel != null) { openPanel = null }
+
+    // The page, scrubber and play button take their colours from the artwork (see ArtworkBackdrop).
+    val palette = remember(current?.artwork) { current?.artwork?.let(::artworkPalette) }
+    ArtworkBackdrop(palette) { colors ->
+        val vivid = colors.vivid
+        val normal = colors.normal
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
@@ -216,11 +252,34 @@ fun LiveLyricsScreen(
             },
             bottomBar = {
                 if (current != null) {
+                    val lyrics = viewModel.lyrics
                     PlayerControls(
                         controller = controller,
                         positionMs = positionMs,
                         durationMs = current.durationMs,
                         isPlaying = isPlaying,
+                        accent = vivid,
+                        secondary = normal,
+                        start = {
+                            // Timing only means something for synced lyrics.
+                            PanelButton(
+                                icon = Icons.Default.Timer,
+                                contentDescription = stringResource(R.string.timing_title),
+                                open = openPanel == PanelSide.Start,
+                                onClick = { openPanel = if (openPanel == PanelSide.Start) null else PanelSide.Start },
+                                badge = offsetMs.takeIf { it != 0f }?.let(::formatOffsetSeconds),
+                                enabled = lyrics is LiveLyrics.Synced,
+                            )
+                        },
+                        end = {
+                            PanelButton(
+                                icon = Icons.Default.Lyrics,
+                                contentDescription = stringResource(R.string.source_title),
+                                open = openPanel == PanelSide.End,
+                                onClick = { openPanel = if (openPanel == PanelSide.End) null else PanelSide.End },
+                                highlighted = viewModel.pinnedProvider != null,
+                            )
+                        },
                     )
                 }
             },
@@ -240,38 +299,80 @@ fun LiveLyricsScreen(
                 }
                 TrackHeader(current)
                 val lyrics = viewModel.lyrics
-                AnimatedContent(
-                    targetState = lyrics,
-                    contentKey = { it::class },
-                    transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
-                    label = "liveLyrics",
-                    modifier = Modifier
+                Box(
+                    Modifier
                         .weight(1f)
-                        .fadingEdges(top = 28.dp, bottom = 56.dp),
-                ) { state ->
-                    when (state) {
-                        LiveLyrics.Searching -> Searching()
-                        is LiveLyrics.Synced -> SyncedLyrics(
-                            lines = state.lines,
-                            source = state.source,
-                            positionMs = { positionMs },
-                            onSeek = { ms -> seekTo(controller, ms) },
+                        .fillMaxWidth()
+                ) {
+                    AnimatedContent(
+                        targetState = lyrics,
+                        contentKey = { it::class },
+                        transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
+                        label = "liveLyrics",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .fadingEdges(top = 28.dp, bottom = 56.dp),
+                    ) { state ->
+                        when (state) {
+                            LiveLyrics.Searching -> Searching()
+                            is LiveLyrics.Synced -> SyncedLyrics(
+                                lines = state.lines,
+                                source = state.source,
+                                positionMs = { positionMs },
+                                offsetMs = { offsetMs.toLong() },
+                                onSeek = { ms -> seekTo(controller, ms) },
+                            )
+                            is LiveLyrics.Plain -> PlainLyrics(state.text, state.source)
+                            is LiveLyrics.NotFound -> if (state.provider != null) Message(
+                                icon = Icons.Default.MusicOff,
+                                title = stringResource(R.string.live_lyrics_not_found_on, state.provider.displayName),
+                                body = stringResource(R.string.live_lyrics_not_found_on_body),
+                                action = stringResource(R.string.source_auto) to { viewModel.pickProvider(null) },
+                            ) else Message(
+                                icon = Icons.Default.MusicOff,
+                                title = stringResource(R.string.live_lyrics_not_found),
+                                body = stringResource(R.string.live_lyrics_not_found_body),
+                                action = stringResource(R.string.try_again) to { viewModel.retry() },
+                            )
+                            LiveLyrics.NoConnection -> Message(
+                                icon = Icons.Default.WifiOff,
+                                title = stringResource(R.string.live_lyrics_no_connection),
+                                body = stringResource(R.string.live_lyrics_no_connection_body),
+                                action = stringResource(R.string.try_again) to { viewModel.retry() },
+                            )
+                        }
+                    }
+
+                    PopupPanel(
+                        side = PanelSide.Start,
+                        visible = openPanel == PanelSide.Start && lyrics is LiveLyrics.Synced,
+                        onDismiss = { openPanel = null },
+                        icon = Icons.Default.Timer,
+                        title = stringResource(R.string.timing_title),
+                        headerAction = { TimingResetButton(offsetMs) { offsetMs = 0f; saveOffset() } },
+                    ) {
+                        TimingPanel(
+                            offsetMs = offsetMs,
+                            rangeMs = LIVE_OFFSET_RANGE_MS,
+                            onOffsetChange = { offsetMs = it },
+                            onCommit = ::saveOffset,
+                            accent = vivid,
                         )
-                        is LiveLyrics.Plain -> PlainLyrics(state.text, state.source)
-                        LiveLyrics.NotFound -> Message(
-                            icon = Icons.Default.MusicOff,
-                            title = stringResource(R.string.live_lyrics_not_found),
-                            body = stringResource(R.string.live_lyrics_not_found_body),
-                            action = stringResource(R.string.try_again) to {
-                                viewModel.load(current, null, retry = true)
-                            },
-                        )
-                        LiveLyrics.NoConnection -> Message(
-                            icon = Icons.Default.WifiOff,
-                            title = stringResource(R.string.live_lyrics_no_connection),
-                            body = stringResource(R.string.live_lyrics_no_connection_body),
-                            action = stringResource(R.string.try_again) to {
-                                viewModel.load(current, null, retry = true)
+                    }
+                    PopupPanel(
+                        side = PanelSide.End,
+                        visible = openPanel == PanelSide.End,
+                        onDismiss = { openPanel = null },
+                        icon = Icons.Default.Lyrics,
+                        title = stringResource(R.string.source_title),
+                    ) {
+                        SourcePanel(
+                            providers = viewModel.availableProviders,
+                            pinned = viewModel.pinnedProvider,
+                            shownFrom = (lyrics as? LiveLyrics.Synced)?.source ?: (lyrics as? LiveLyrics.Plain)?.source,
+                            onPick = { provider ->
+                                viewModel.pickProvider(provider)
+                                openPanel = null
                             },
                         )
                     }
@@ -303,18 +404,6 @@ private fun canSeek(controller: MediaController?): Boolean =
 
 private fun seekTo(controller: MediaController?, ms: Long) {
     if (canSeek(controller)) controller?.transportControls?.seekTo(ms.coerceAtLeast(0))
-}
-
-/** The artwork's average colour, used to tint the page. Null when the bitmap can't be read in software. */
-private fun averageColor(bitmap: Bitmap): Color? = try {
-    val readable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && bitmap.config == Bitmap.Config.HARDWARE) {
-        bitmap.copy(Bitmap.Config.ARGB_8888, false)
-    } else bitmap
-    Color(Bitmap.createScaledBitmap(readable, 1, 1, true).getPixel(0, 0))
-} catch (e: IllegalArgumentException) {
-    null // recycled or unreadable bitmap: the page uses the theme colour instead
-} catch (e: IllegalStateException) {
-    null
 }
 
 @Composable
@@ -366,17 +455,45 @@ private fun TrackHeader(track: NowPlayingTrack) {
     }
 }
 
+/**
+ * The right-hand panel: "Best match" (the automatic search) or one source only. [shownFrom] is where the lyrics on
+ * screen came from, so the automatic row can say which source won.
+ */
+@Composable
+private fun SourcePanel(
+    providers: List<Providers>,
+    pinned: Providers?,
+    shownFrom: Providers?,
+    onPick: (Providers?) -> Unit,
+) {
+    SourceRow(
+        label = stringResource(R.string.source_auto),
+        detail = if (pinned == null) shownFrom?.displayName else null,
+        selected = pinned == null,
+        onClick = { onPick(null) },
+    )
+    providers.forEach { provider ->
+        SourceRow(
+            label = provider.displayName,
+            detail = null,
+            selected = pinned == provider,
+            onClick = { onPick(provider) },
+        )
+    }
+}
+
 @Composable
 private fun SyncedLyrics(
     lines: List<LyricLine>,
-    source: String?,
+    source: Providers?,
     positionMs: () -> Long?,
+    offsetMs: () -> Long,
     onSeek: (Long) -> Unit,
 ) {
     val listState = rememberLazyListState()
     // Only a change of line recomposes the list, not every position tick.
     val currentIndex by remember(lines) {
-        derivedStateOf { positionMs()?.let { currentLineIndex(lines, it + LINE_LEAD_MS) } ?: -1 }
+        derivedStateOf { positionMs()?.let { currentLineIndex(lines, it + LINE_LEAD_MS + offsetMs()) } ?: -1 }
     }
     val positionKnown by remember { derivedStateOf { positionMs() != null } }
 
@@ -432,7 +549,7 @@ private fun SyncedLyrics(
                         transformOrigin = TransformOrigin(0f, 0.5f)
                     }
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable { onSeek(line.timeMs) }
+                    .clickable { onSeek(line.timeMs - offsetMs()) }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
             )
         }
@@ -441,7 +558,7 @@ private fun SyncedLyrics(
 }
 
 @Composable
-private fun PlainLyrics(text: String, source: String?) {
+private fun PlainLyrics(text: String, source: Providers?) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -473,9 +590,9 @@ private fun PlainLyrics(text: String, source: String?) {
 }
 
 @Composable
-private fun SourceFooter(source: String?, modifier: Modifier = Modifier) {
+private fun SourceFooter(source: Providers?, modifier: Modifier = Modifier) {
     Text(
-        text = source?.let { stringResource(R.string.live_lyrics_source, it) }
+        text = source?.let { stringResource(R.string.live_lyrics_source, it.displayName) }
             ?: stringResource(R.string.live_lyrics_source_file),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -536,13 +653,20 @@ private fun formatTime(ms: Long): String {
     return "%d:%02d".format(totalSec / 60, totalSec % 60)
 }
 
-/** Progress (draggable when the player supports seeking) and previous / play-pause / next for the playing app. */
+/**
+ * Progress (draggable when the player supports seeking) and previous / play-pause / next for the playing app, with
+ * [start] and [end] (the timing and source buttons) at the ends of the button row.
+ */
 @Composable
 private fun PlayerControls(
     controller: MediaController?,
     positionMs: Long?,
     durationMs: Long?,
     isPlaying: Boolean,
+    accent: Color,
+    secondary: Color,
+    start: @Composable () -> Unit,
+    end: @Composable () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -553,7 +677,7 @@ private fun PlayerControls(
     ) {
         if (durationMs != null && positionMs != null) {
             var dragging by remember { mutableStateOf<Float?>(null) }
-            Slider(
+            WaveScrubber(
                 value = dragging ?: positionMs.coerceIn(0, durationMs).toFloat(),
                 onValueChange = { dragging = it },
                 onValueChangeFinished = {
@@ -561,7 +685,10 @@ private fun PlayerControls(
                     dragging = null
                 },
                 valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f),
+                playing = isPlaying,
                 enabled = canSeek(controller),
+                activeColor = accent,
+                secondaryColor = secondary,
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
@@ -580,9 +707,9 @@ private fun PlayerControls(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 4.dp),
-            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { start() }
             IconButton(onClick = { controller?.transportControls?.skipToPrevious() }, modifier = Modifier.size(56.dp)) {
                 Icon(
                     Icons.Default.SkipPrevious,
@@ -590,13 +717,14 @@ private fun PlayerControls(
                     modifier = Modifier.size(32.dp),
                 )
             }
-            Spacer(Modifier.width(20.dp))
+            Spacer(Modifier.width(12.dp))
             FilledIconButton(
                 onClick = {
                     val controls = controller?.transportControls ?: return@FilledIconButton
                     if (isPlaying) controls.pause() else controls.play()
                 },
                 modifier = Modifier.size(68.dp),
+                colors = artworkPlayButtonColors(accent),
             ) {
                 Icon(
                     if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -604,7 +732,7 @@ private fun PlayerControls(
                     modifier = Modifier.size(36.dp),
                 )
             }
-            Spacer(Modifier.width(20.dp))
+            Spacer(Modifier.width(12.dp))
             IconButton(onClick = { controller?.transportControls?.skipToNext() }, modifier = Modifier.size(56.dp)) {
                 Icon(
                     Icons.Default.SkipNext,
@@ -612,6 +740,7 @@ private fun PlayerControls(
                     modifier = Modifier.size(32.dp),
                 )
             }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { end() }
         }
     }
 }

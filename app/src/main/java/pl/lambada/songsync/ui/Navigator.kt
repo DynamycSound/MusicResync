@@ -27,6 +27,8 @@ import pl.lambada.songsync.ui.screens.init.InitScreenViewModel
 import pl.lambada.songsync.ui.screens.lyricsFetch.LyricsFetchScreen
 import pl.lambada.songsync.ui.screens.lyricsFetch.LyricsFetchViewModel
 import pl.lambada.songsync.ui.screens.player.SyncedLyricsPlayerScreen
+import pl.lambada.songsync.nowplaying.LyricsLookup
+import pl.lambada.songsync.data.remote.lyrics_providers.SmartLyricsMatcher
 import pl.lambada.songsync.ui.screens.settings.SettingsScreen
 import pl.lambada.songsync.ui.screens.settings.SettingsViewModel
 
@@ -158,6 +160,13 @@ fun Navigator(
                     artists = args.artists,
                     initialLyrics = args.lyrics,
                     onRequestCovers = { lyricsProviderService.getCoverCandidates(args.songName, args.artists, args.filePath) },
+                    sourceProviders = (userSettingsController.enabledProviderOrder + userSettingsController.selectedProvider).distinct(),
+                    onFindLyrics = { provider, durationMs ->
+                        val (local, candidates) = LyricsLookup.librarySong(args.songName, args.artists, args.filePath, durationMs)
+                        val lookup = LyricsLookup(SmartLyricsMatcher(providerService = lyricsProviderService))
+                        if (provider != null) lookup.on(provider, local, candidates)
+                        else lookup.best(local, candidates, listOf(userSettingsController.selectedProvider) + userSettingsController.enabledProviderOrder)
+                    },
                     // Preview mode (arrived from "Adjust timing & preview") should return to Home after Apply/Back,
                     // not to the intermediate search result screen that launched it.
                     onBack = {
