@@ -109,6 +109,19 @@
     <string name="back">Back</string>
     <string name="select_all">Select all</string>
     <string name="invert_selection">Invert selection</string>
+    <!-- Hide individual songs from the list (issue #18) -->
+    <string name="hide_from_list">Hide from list</string>
+    <plurals name="songs_hidden">
+        <item quantity="one">%1$d song hidden</item>
+        <item quantity="other">%1$d songs hidden</item>
+    </plurals>
+    <string name="undo">Undo</string>
+    <string name="hidden_songs">Hidden songs</string>
+    <string name="hidden_songs_count">Hidden songs (%1$d)</string>
+    <string name="hidden_songs_desc">Hidden songs don\'t appear in the list and are skipped by batch download.</string>
+    <string name="unhide">Unhide</string>
+    <string name="unhide_all">Unhide all</string>
+    <string name="song_not_in_library">No longer in your library</string>
     <string name="no_lyrics">No lyrics: %1$d</string>
     <plurals name="this_will_download_lyrics_for_all_songs">
         <item quantity="one">This will download lyrics for one song. Existing lyrics for songs will be overwritten with new ones. This may be less accurate than downloading lyrics one by one. Are you sure you want to continue?</item>
