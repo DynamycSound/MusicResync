@@ -130,7 +130,6 @@ class HomeViewModel(
         }
     )
 
-    var showFilters by mutableStateOf(false)
     var showSort by mutableStateOf(false)
     var showingSearch by  mutableStateOf(false)
     var showSearch by mutableStateOf(showingSearch)

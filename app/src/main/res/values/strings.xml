@@ -106,8 +106,10 @@
     </plurals>
     <string name="undo">Undo</string>
     <string name="hidden_songs">Hidden songs</string>
-    <string name="hidden_songs_count">Hidden songs (%1$d)</string>
-    <string name="hidden_songs_desc">Hidden songs don\'t appear in the list and are skipped by batch download.</string>
+    <string name="hidden_songs_desc">Hidden songs don\'t appear in your list and are skipped by batch download.</string>
+    <string name="hidden_songs_how_to_hide">Long-press songs in your list, then tap the eye icon at the top to hide them</string>
+    <string name="no_hidden_songs">No hidden songs</string>
+    <string name="no_hidden_songs_hint">To hide songs, long-press them in your list, then tap the eye icon at the top.</string>
     <string name="unhide">Unhide</string>
     <string name="unhide_all">Unhide all</string>
     <string name="song_not_in_library">No longer in your library</string>
@@ -127,10 +129,19 @@
     <string name="error_checking_for_updates">Error checking for updates</string>
     <string name="close">Close</string>
     <string name="filters">Filters</string>
-    <string name="no_lyrics_only">Only show songs without LRC file lyrics</string>
+    <string name="no_lyrics_only">Only show songs without lyrics</string>
+    <string name="no_lyrics_only_desc">Hides songs that already have synced lyrics</string>
+    <string name="filters_section_lyrics">Lyrics</string>
+    <string name="filters_section_library">Library</string>
     <string name="ignore_folders">Ignore folders</string>
     <string name="folders">Folders</string>
     <string name="folders_shown_summary">%1$d of %2$d folders shown</string>
+    <plurals name="folders_all_shown">
+        <item quantity="one">%1$d folder shown</item>
+        <item quantity="other">All %1$d folders shown</item>
+    </plurals>
+    <string name="folders_only_checked_summary">Only checked folders · %1$d of %2$d shown</string>
+    <string name="no_folders_found">No music folders found</string>
     <string name="folder_mode_all_except_unchecked">Show all folders except unchecked</string>
     <string name="folder_mode_all_except_unchecked_desc">New folders show up automatically</string>
     <string name="folder_mode_only_checked">Only show checked folders</string>

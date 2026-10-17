@@ -15,6 +15,8 @@ import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
 import pl.lambada.songsync.ui.common.animatedComposable
 import pl.lambada.songsync.ui.screens.batch.BatchOptionsScreen
 import pl.lambada.songsync.ui.screens.batch.BatchProgressScreen
+import pl.lambada.songsync.ui.screens.filters.FiltersScreen
+import pl.lambada.songsync.ui.screens.filters.HiddenSongsScreen
 import pl.lambada.songsync.ui.screens.home.HomeScreen
 import pl.lambada.songsync.util.batch.BatchDownloadController
 import pl.lambada.songsync.ui.screens.home.HomeViewModel
@@ -112,6 +114,28 @@ fun Navigator(
                     navController = navController
                 )
             }
+            // Filters and Hidden songs act on the Home list, so (like the batch options page) they reuse the
+            // HomeViewModel scoped to the Home back-stack entry. Popping by route makes a double-tapped back arrow
+            // a no-op instead of popping Home too.
+            animatedComposable<ScreenFilters> { entry ->
+                val homeEntry = remember(entry) { navController.getBackStackEntry(ScreenHome) }
+                FiltersScreen(
+                    viewModel = viewModel(viewModelStoreOwner = homeEntry) {
+                        HomeViewModel(userSettingsController, lyricsProviderService)
+                    },
+                    onNavigateBack = { navController.popBackStack<ScreenFilters>(inclusive = true) },
+                    onOpenHiddenSongs = { navController.navigate(ScreenHiddenSongs) { launchSingleTop = true } },
+                )
+            }
+            animatedComposable<ScreenHiddenSongs> { entry ->
+                val homeEntry = remember(entry) { navController.getBackStackEntry(ScreenHome) }
+                HiddenSongsScreen(
+                    viewModel = viewModel(viewModelStoreOwner = homeEntry) {
+                        HomeViewModel(userSettingsController, lyricsProviderService)
+                    },
+                    onNavigateBack = { navController.popBackStack<ScreenHiddenSongs>(inclusive = true) },
+                )
+            }
             animatedComposable<PlayerScreen> {
                 val args = it.toRoute<PlayerScreen>()
                 SyncedLyricsPlayerScreen(
@@ -169,6 +193,12 @@ data class LocalSong(
 
 @Serializable
 object ScreenSettings
+
+@Serializable
+object ScreenFilters
+
+@Serializable
+object ScreenHiddenSongs
 
 @Serializable
 object ScreenBatchOptions
