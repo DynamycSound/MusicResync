@@ -1,12 +1,15 @@
 package pl.lambada.songsync.data
 
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -14,6 +17,8 @@ import pl.lambada.songsync.domain.model.SortOrders
 import pl.lambada.songsync.domain.model.SortValues
 import pl.lambada.songsync.util.Providers
 import pl.lambada.songsync.util.defaultProviderFallbackOrder
+import pl.lambada.songsync.util.folders.FolderFilter
+import pl.lambada.songsync.util.folders.FolderFilterMode
 import pl.lambada.songsync.util.set
 
 /**
@@ -64,10 +69,28 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
     )
         private set
 
+    // Hidden folders (exact match). Stored as a string set since #21 so folder names containing commas survive a
+    // restart; until the first write after updating, the legacy comma-joined "blacklist" value is read as-is.
     var blacklistedFolders by mutableStateOf(
-        parseBlacklistedFolders(prefs[blacklistedFoldersKey] ?: "")
+        prefs[blacklistedFoldersSetKey]?.toList()
+            ?: parseBlacklistedFolders(prefs[legacyBlacklistedFoldersKey] ?: "")
     )
         private set
+
+    // Folder whitelist (issue #21). Defaults keep the pre-#21 behavior: show everything except hidden folders.
+    var folderFilterMode by mutableStateOf(FolderFilterMode.fromKey(prefs[folderFilterModeKey]))
+        private set
+
+    var folderWhitelistIncluded by mutableStateOf(prefs[folderWhitelistIncludedKey] ?: emptySet())
+        private set
+
+    var folderWhitelistExcluded by mutableStateOf(prefs[folderWhitelistExcludedKey] ?: emptySet())
+        private set
+
+    /** The effective folder filter (hidden folders + whitelist rules), rebuilt only when one of its parts changes. */
+    val folderFilter: FolderFilter by derivedStateOf {
+        FolderFilter.create(folderFilterMode, blacklistedFolders, folderWhitelistIncluded, folderWhitelistExcluded)
+    }
 
     // Provider fallback chain (issue #6): the full, user-arrangeable order providers are tried in, plus the set
     // the user switched off. The effective chain is [enabledProviderOrder].
@@ -167,9 +190,26 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         selectedProvider = to
     }
 
+    /** Replaces the hidden-folder list. Adding a folder here hides it in every folder-filter mode. */
     fun updateBlacklistedFolders(to: List<String>) {
-        dataStore.set(blacklistedFoldersKey, to.joinToString(","))
+        dataStore.set(blacklistedFoldersSetKey, to.toSet())
         blacklistedFolders = to
+    }
+
+    /** Persists a whole folder filter (mode, hidden folders, whitelist rules) in a single DataStore write. */
+    fun updateFolderFilter(to: FolderFilter) {
+        runBlocking(Dispatchers.IO) {
+            dataStore.edit {
+                it[folderFilterModeKey] = to.mode.key
+                it[blacklistedFoldersSetKey] = to.hidden
+                it[folderWhitelistIncludedKey] = to.included
+                it[folderWhitelistExcludedKey] = to.excluded
+            }
+        }
+        folderFilterMode = to.mode
+        blacklistedFolders = to.hidden.toList()
+        folderWhitelistIncluded = to.included
+        folderWhitelistExcluded = to.excluded
     }
 
     fun updateProviderOrder(to: List<Providers>) {
@@ -287,7 +327,11 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
 private val embedKey = booleanPreferencesKey("embed_lyrics")
 private val passedInitKey = booleanPreferencesKey("passed_init")
 private val selectedProviderKey = stringPreferencesKey("provider")
-private val blacklistedFoldersKey = stringPreferencesKey("blacklist")
+private val legacyBlacklistedFoldersKey = stringPreferencesKey("blacklist") // pre-#21, read-only migration source
+private val blacklistedFoldersSetKey = stringSetPreferencesKey("blacklist_folders")
+private val folderFilterModeKey = stringPreferencesKey("folder_filter_mode")
+private val folderWhitelistIncludedKey = stringSetPreferencesKey("folder_whitelist_included")
+private val folderWhitelistExcludedKey = stringSetPreferencesKey("folder_whitelist_excluded")
 private val providerOrderKey = stringPreferencesKey("provider_fallback_order")
 private val disabledProvidersKey = stringPreferencesKey("disabled_providers")
 private val hideLyricsKey = booleanPreferencesKey("hide_lyrics")
