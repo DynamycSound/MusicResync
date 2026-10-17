@@ -47,8 +47,9 @@ private fun ContributorRow(name: String, subtitle: String, url: String, uriHandl
         Text(text = name)
         Text(
             text = subtitle,
-            color = MaterialTheme.colorScheme.outline,
-            fontSize = 12.sp
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
         )
     }
 }

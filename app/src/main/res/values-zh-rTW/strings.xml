@@ -35,19 +35,11 @@
     <string name="view_on_github">在Github上查看</string>
     <string name="we_are_open_source">MusicResync是開源項目。你可以在Github上找到源代碼。</string>
     <string name="contributors">貢獻者</string>
-    <string name="telegram_group">Telegram群組</string>
     <string name="source_code">源代碼</string>
-    <string name="support">支援</string>
-    <string name="contributor">貢獻者</string>
     <string name="developer">開發者</string>
-    <string name="lead_developer">主開發者</string>
-    <string name="close_app">關閉應用程式</string>
     <string name="permission_denied">權限被拒絕</string>
     <string name="requires_higher_storage_permissions">此應用程式需要存取儲存空間權限才能掃描您的音樂庫和保存歌詞。</string>
     <string name="already_granted_restart">已經授予權限了？ 嘗試重新啟動應用程式。</string>
-    <string name="no_internet_connection">沒有網路連線</string>
-    <string name="you_need_internet_connection">您需要網路連線才能使用此應用程式。</string>
-    <string name="check_your_connection">請檢查您的連線並重試。</string>
     <string name="home">首頁</string>
     <string name="song_name_no_args">歌曲名稱</string>
     <string name="artist_name_no_args">藝術家名稱</string>
@@ -93,9 +85,7 @@
     <string name="statusbar_lyrics_ext">狀態列歌詞擴展(網易雲音樂)</string>
     <string name="open_website">打開網站</string>
     <string name="provider">歌詞提供者</string>
-    <string name="ignore">忽略</string>
     <string name="internal_error">內部錯誤：%s</string>
-    <string name="include_translation">包括翻譯</string>
     <string name="embed_lyrics_in_file">將歌詞嵌入檔案</string>
     <string name="embedded_lyrics_in_file">歌詞已嵌入到歌曲檔案中</string>
     <string name="embed_non_local_song_error">您嘗試將歌詞嵌入到非本地文件中。 正在停止操作。</string>
@@ -116,15 +106,11 @@
     <string name="save_lrc_file">儲存 .lrc 檔案</string>
     <string name="no_results">沒有結果</string>
     <string name="extra_what_is_songsync">您還可以搜尋特定歌曲以獲取其歌詞（並將其保存到下載）。</string>
-    <string name="bugs_or_suggestions_contact_us">出現錯誤？ 有什麼建議？ 想做出貢獻嗎？ 請隨時透過我的 Telegram 群組與我聯繫。</string>
-    <string name="create_issue">您也可以在 GitHub 上建立問題（連結如上）。</string>
     <string name="sort">分類</string>
-    <string name="translation_website">打開weblate網站</string>
     <string name="about">關於</string>
     <string name="local_song">本地歌曲</string>
     <string name="back">返回</string>
     <string name="clear">清除</string>
-    <string name="translation">翻譯</string>
     <string name="pure_black_theme_summary">啟用深色模式時使用純黑色主題</string>
     <string name="changelog">變更內容:\n\n%1$s</string>
     <string name="no_lyrics_only">僅顯示沒有歌詞的歌曲</string>
@@ -133,8 +119,6 @@
     <string name="provider_summary">請選擇下面的歌詞提供者</string>
     <string name="artist">藝術家</string>
     <string name="disable_marquee_summary">禁用應用程式中的移動文字動畫</string>
-    <string name="include_translation_summary">從網易雲音樂獲取歌詞時包括歌詞翻譯</string>
-    <string name="help_us_translate">幫助我們將應用程式翻譯成您的語言!</string>
     <string name="ascending">升序</string>
     <string name="descending">降序</string>
     <string name="show_notification_permission">顯示通知(可選)</string>
@@ -149,7 +133,6 @@
     <string name="song">曲目: %1$s</string>
     <string name="progress">進度: %1$d/%2$d (%3$d%%)</string>
     <string name="spotify_for_developers">面相開發者的Spotify</string>
-    <string name="if_connected_spotify_down">如果網路已經連線，那麼Spotify的伺服器可能正在維護。請稍後再試。</string>
     <plurals name="this_will_download_lyrics_for_all_songs">
         <item quantity="other">這將下載 %1$d 首歌曲的歌詞。已經存在的歌詞將會被新的歌詞覆蓋。這可能不如一一下載歌詞準確。確定要繼續嗎?</item>
     </plurals>

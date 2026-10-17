@@ -1,6 +1,13 @@
 package pl.lambada.songsync.ui.screens.batch
 
 import android.os.Build
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -18,7 +26,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,12 +42,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import pl.lambada.songsync.R
 import pl.lambada.songsync.ui.components.SettingsHeadLabel
@@ -63,6 +76,9 @@ fun BatchOptionsScreen(
     val songs = viewModel.songsToBatchDownload
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var showLegacyPrompt by remember { mutableStateOf(false) }
+    // Advanced options start collapsed: the defaults are meant to be right for a first run, so "press Start" is
+    // all a new user has to do. Collapsing only hides the rows — every stored value still applies as before.
+    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
 
     val total = songs.size
     // Songs the batch will actually process when skipExisting is on = those WITHOUT synced lyrics. UNSYNCED
@@ -100,9 +116,10 @@ fun BatchOptionsScreen(
                     },
                     enabled = songsToProcess > 0,
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .navigationBarsPadding()
                         .padding(horizontal = 20.dp, vertical = 12.dp)
-                        .navigationBarsPadding(),
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp),
                 ) {
                     Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
@@ -150,7 +167,8 @@ fun BatchOptionsScreen(
             // Fast mode leads the list: same providers, same matching guards, tighter time budgets — the
             // recommended default for every batch run.
             SwitchItem(
-                label = stringResource(R.string.fast_mode) + "  •  " + stringResource(R.string.recommended),
+                label = stringResource(R.string.fast_mode),
+                badge = stringResource(R.string.recommended),
                 description = stringResource(R.string.batch_fast_mode_desc),
                 selected = settings.batchFastMode,
             ) { settings.updateBatchFastMode(!settings.batchFastMode) }
@@ -167,44 +185,60 @@ fun BatchOptionsScreen(
                 selected = settings.batchSaveLrc,
             ) { settings.updateBatchSaveLrc(!settings.batchSaveLrc) }
 
-            SettingsHeadLabel(label = stringResource(R.string.batch_options_advanced))
-
-            SwitchItem(
-                label = stringResource(R.string.skip_no_lyrics),
-                description = stringResource(R.string.skip_no_lyrics_desc),
-                selected = settings.batchSkipNoLyrics,
-            ) { settings.updateBatchSkipNoLyrics(!settings.batchSkipNoLyrics) }
-
-            SwitchItem(
-                label = stringResource(R.string.embed_lyrics_in_file),
-                description = stringResource(R.string.embed_lyrics_desc),
-                selected = settings.batchEmbedLyrics,
-            ) { settings.updateBatchEmbedLyrics(!settings.batchEmbedLyrics) }
-
-            SwitchItem(
-                label = stringResource(R.string.correct_metadata),
-                description = stringResource(R.string.correct_metadata_desc),
-                selected = settings.batchCorrectMetadata,
-            ) { settings.updateBatchCorrectMetadata(!settings.batchCorrectMetadata) }
-
-            SwitchItem(
-                label = stringResource(R.string.auto_try_providers),
-                description = stringResource(R.string.auto_try_providers_desc),
-                selected = settings.batchAutoTryProviders,
-            ) { settings.updateBatchAutoTryProviders(!settings.batchAutoTryProviders) }
-
-            SwitchItem(
-                label = stringResource(R.string.add_unsynced_if_no_synced),
-                description = stringResource(R.string.add_unsynced_if_no_synced_desc),
-                selected = settings.batchAddUnsyncedFallback,
-            ) { settings.updateBatchAddUnsyncedFallback(!settings.batchAddUnsyncedFallback) }
-
-            Text(
-                text = stringResource(R.string.private_lrc_note),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
             )
+
+            AdvancedHeader(
+                expanded = advancedExpanded,
+                onToggle = { advancedExpanded = !advancedExpanded },
+            )
+
+            AnimatedVisibility(
+                visible = advancedExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                Column {
+                    SwitchItem(
+                        label = stringResource(R.string.skip_no_lyrics),
+                        description = stringResource(R.string.skip_no_lyrics_desc),
+                        selected = settings.batchSkipNoLyrics,
+                    ) { settings.updateBatchSkipNoLyrics(!settings.batchSkipNoLyrics) }
+
+                    SwitchItem(
+                        label = stringResource(R.string.embed_lyrics_in_file),
+                        description = stringResource(R.string.embed_lyrics_desc),
+                        selected = settings.batchEmbedLyrics,
+                    ) { settings.updateBatchEmbedLyrics(!settings.batchEmbedLyrics) }
+
+                    SwitchItem(
+                        label = stringResource(R.string.correct_metadata),
+                        description = stringResource(R.string.correct_metadata_desc),
+                        selected = settings.batchCorrectMetadata,
+                    ) { settings.updateBatchCorrectMetadata(!settings.batchCorrectMetadata) }
+
+                    SwitchItem(
+                        label = stringResource(R.string.auto_try_providers),
+                        description = stringResource(R.string.auto_try_providers_desc),
+                        selected = settings.batchAutoTryProviders,
+                    ) { settings.updateBatchAutoTryProviders(!settings.batchAutoTryProviders) }
+
+                    SwitchItem(
+                        label = stringResource(R.string.add_unsynced_if_no_synced),
+                        description = stringResource(R.string.add_unsynced_if_no_synced_desc),
+                        selected = settings.batchAddUnsyncedFallback,
+                    ) { settings.updateBatchAddUnsyncedFallback(!settings.batchAddUnsyncedFallback) }
+
+                    Text(
+                        text = stringResource(R.string.private_lrc_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
+                    )
+                }
+            }
 
             Spacer(Modifier.height(16.dp))
         }
@@ -214,6 +248,38 @@ fun BatchOptionsScreen(
         LegacyPromptDialog(
             onConfirm = { startAndShowProgress() },
             onDismiss = { showLegacyPrompt = false },
+        )
+    }
+}
+
+/** Collapsible "Advanced" row: title + one-line summary of what's inside, and a chevron that flips when open. */
+@Composable
+private fun AdvancedHeader(expanded: Boolean, onToggle: () -> Unit) {
+    val chevronRotation by animateFloatAsState(if (expanded) 180f else 0f, label = "advancedChevron")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onToggle)
+            .padding(horizontal = 22.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(text = stringResource(R.string.batch_options_advanced))
+            Text(
+                text = stringResource(R.string.batch_options_advanced_desc),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Icon(
+            imageVector = Icons.Filled.ExpandMore,
+            contentDescription = stringResource(
+                if (expanded) R.string.hide_advanced_options else R.string.show_advanced_options
+            ),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.rotate(chevronRotation),
         )
     }
 }
