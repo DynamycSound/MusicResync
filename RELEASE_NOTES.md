@@ -1,7 +1,7 @@
 ## MusicResync v1.8.0
 
 ### Deezer: synced lyrics for the songs nobody else had
-MusicResync now gets synced lyrics from **Deezer**, and asks it **first**. No account or key is needed. Deezer carries licensed, timed lyrics for a huge catalogue, including a lot of Balkan rap that LRCLib and the others simply don't have: Biba "Au" and "BIG BOSS", Gregor Magaš "Srećica", Nihil "Snob", Crni Cerak "Dlan", 38banda "START" and many more. On a real library of SnapTube rips, a rerun over the "No Lyrics" tab found synced lyrics for about one song in five that every other source had missed.
+MusicResync now gets synced lyrics from **Deezer**, and asks it **first**. No account or key is needed. Deezer carries licensed, timed lyrics for a huge catalogue, including a lot of Balkan rap that LRCLib and the others simply don't have: Biba "Au" and "BIG BOSS", Gregor Magaš "Srećica", Nihil "Snob", Crni Cerak "Dlan", 38banda "START" and many more. On a real library of SnapTube rips, a rerun over the "No Lyrics" tab found synced lyrics for 32 of the first 79 songs, all of which had come up empty before.
 
 - A Deezer result only counts when it actually has synced lyrics, so it never stops the other sources from being asked.
 - Deezer's search returns an artist's whole catalogue, so its results also need a matching title. A same-length song by the same artist can't slip through.
@@ -21,6 +21,7 @@ An optional **Now playing** card at the top of Home shows what's playing in any 
 - Batch options keep the three choices that matter up top. Everything else sits under a collapsed **Advanced** section.
 - Filters and Hidden songs are full pages instead of popups. Old settings that did nothing are gone.
 - New selection look: picked songs become rounded cards with a tick on the cover, and the top bar groups Select all / Invert / Hide with a highlighted **download** button.
+- Batch screen: a bigger cover with the spinner right on it, Stop always on screen, no "Show live" flicker as each song slides away, and songs with no lyrics no longer list the providers that were tried.
 - The lyrics player's background takes its colours from the artwork, and you can choose which source to use (saved lyrics, best match, or one provider), with a preview before applying.
 
 ### Sources

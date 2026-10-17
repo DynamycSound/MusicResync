@@ -239,7 +239,6 @@
     <string name="apply">Apply</string>
 
     <!-- Batch progress screen -->
-    <string name="batch_searching">Searching lyrics…</string>
     <string name="batch_synced_label">Synced</string>
     <string name="batch_unsynced_label">Unsynced</string>
     <string name="batch_not_found_label">Not found</string>

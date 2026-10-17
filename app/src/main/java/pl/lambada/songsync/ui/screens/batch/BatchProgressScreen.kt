@@ -17,6 +17,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -75,6 +76,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -159,14 +162,36 @@ fun BatchProgressScreen(userSettingsController: UserSettingsController, onNaviga
                 },
                 title = { Text(stringResource(R.string.batch_download_lyrics)) },
             )
-        }
+        },
+        // Pinned, so Stop / Close stay reachable however tall the page gets (big fonts, the unsynced card...).
+        bottomBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(top = 8.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+            ) {
+                if (controller.isRunning) {
+                    FilledTonalButton(onClick = { showKeepAliveDialog = true }) {
+                        Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.run_in_background))
+                    }
+                    OutlinedButton(onClick = { controller.stop() }) {
+                        Text(stringResource(R.string.stop))
+                    }
+                } else {
+                    Button(onClick = onNavigateBack) { Text(stringResource(R.string.close)) }
+                }
+            }
+        },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding(),
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(8.dp))
@@ -178,11 +203,12 @@ fun BatchProgressScreen(userSettingsController: UserSettingsController, onNaviga
             ) { page ->
                 if (page < controller.processed.size) {
                     val entry = controller.processed[page]
+                    val gotLyrics = entry.info.hasLyrics || entry.info.state == LyricState.UNSYNCED
                     SongPage(
                         song = entry.song,
                         subtitle = resultLabel(entry.info.state),
-                        provider = entry.info.provider?.displayName,
-                        showViewLyrics = entry.info.hasLyrics || entry.info.state == LyricState.UNSYNCED,
+                        provider = entry.info.provider?.displayName?.takeIf { gotLyrics },
+                        showViewLyrics = gotLyrics,
                         searching = false,
                         onClick = { lyricsSheetSong = entry.song },
                     )
@@ -191,8 +217,10 @@ fun BatchProgressScreen(userSettingsController: UserSettingsController, onNaviga
                 }
             }
 
-            // History position + jump back to live. Only visible while browsing.
-            AnimatedVisibility(visible = !onLivePage, enter = fadeIn(), exit = fadeOut()) {
+            // History position + jump back to live. Only visible while the user is browsing: while following live,
+            // the pager is briefly one page behind after every finished song (until the auto-scroll lands), and
+            // showing the chip for that moment made it flash in and out and shove the whole screen down.
+            AnimatedVisibility(visible = !followLive && !onLivePage, enter = fadeIn(), exit = fadeOut()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = stringResource(
@@ -311,25 +339,7 @@ fun BatchProgressScreen(userSettingsController: UserSettingsController, onNaviga
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
-
-            // Actions.
-            if (controller.isRunning) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    FilledTonalButton(onClick = { showKeepAliveDialog = true }) {
-                        Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.run_in_background))
-                    }
-                    OutlinedButton(onClick = { controller.stop() }) {
-                        Text(stringResource(R.string.stop))
-                    }
-                }
-            } else {
-                Button(onClick = onNavigateBack) { Text(stringResource(R.string.close)) }
-            }
-
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(8.dp))
         }
     }
 
@@ -604,7 +614,7 @@ private fun CategorySongRow(
             )
             val subtitleParts = listOfNotNull(
                 song.artist,
-                entry.info.provider?.displayName,
+                entry.info.provider?.displayName?.takeIf { showLyricsHint },
             )
             Text(
                 text = subtitleParts.joinToString(" · ").ifBlank { stringResource(R.string.unknown) },
@@ -634,7 +644,7 @@ private fun LivePage(controller: BatchDownloadController) {
             if (song != null) {
                 SongPage(
                     song = song,
-                    subtitle = stringResource(R.string.batch_searching),
+                    subtitle = null,
                     provider = null,
                     showViewLyrics = false,
                     searching = true,
@@ -672,7 +682,7 @@ private fun StatusPage(icon: @Composable () -> Unit, title: String, subtitle: St
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(240.dp),
+            .height(PAGE_HEIGHT),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -704,11 +714,15 @@ private fun elapsedLabel(controller: BatchDownloadController): String? {
     return stringResource(R.string.batch_finished_in, duration)
 }
 
+private val ART_SIZE = 190.dp
+private val ART_SHAPE = RoundedCornerShape(28.dp)
+private val PAGE_HEIGHT = 300.dp
+
 /** One pager page: big album art, title/artist, and a small state line underneath. */
 @Composable
 private fun SongPage(
     song: Song,
-    subtitle: String,
+    subtitle: String?,
     provider: String?,
     showViewLyrics: Boolean,
     searching: Boolean,
@@ -723,27 +737,33 @@ private fun SongPage(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(240.dp)
+            .height(PAGE_HEIGHT)
             .padding(horizontal = 32.dp)
             .let { m -> if (onClick != null) m.clickable(onClick = onClick) else m },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box {
+        Box(contentAlignment = Alignment.Center) {
             Image(
                 painter = painter,
                 contentDescription = stringResource(R.string.album_cover),
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .size(120.dp)
-                    .clip(RoundedCornerShape(24.dp)),
+                    .size(ART_SIZE)
+                    .clip(ART_SHAPE),
             )
             if (searching) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .clip(ART_SHAPE)
+                        .background(Color.Black.copy(alpha = 0.4f))
+                )
                 CircularProgressIndicator(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .align(Alignment.BottomEnd)
-                        .padding(2.dp),
-                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(56.dp),
+                    color = Color.White,
+                    trackColor = Color.White.copy(alpha = 0.25f),
+                    strokeWidth = 4.dp,
                 )
             }
         }
@@ -762,12 +782,14 @@ private fun SongPage(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = provider?.let { "$subtitle · $it" } ?: subtitle,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (subtitle != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = provider?.let { "$subtitle · $it" } ?: subtitle,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (showViewLyrics) {
             Text(
                 text = stringResource(R.string.tap_to_view_lyrics),
