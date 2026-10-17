@@ -349,4 +349,18 @@
     <string name="now_playing_setting_title">Now playing card</string>
     <string name="now_playing_setting_description">Shows the song playing in other apps at the top of Home. Tap it to get its lyrics. Uses notification access only to see the media player; notifications are not read.</string>
     <string name="now_playing_setting_needs_access">Tap to allow notification access, needed to see what\'s playing.</string>
+    <string name="live_lyrics_finding">Finding lyrics…</string>
+    <string name="live_lyrics_not_found">No lyrics found</string>
+    <string name="live_lyrics_not_found_body">None of the lyrics sources have this song yet.</string>
+    <string name="live_lyrics_no_connection">No connection</string>
+    <string name="live_lyrics_no_connection_body">Connect to the internet to get lyrics for this song.</string>
+    <string name="live_lyrics_nothing_playing">Nothing is playing</string>
+    <string name="live_lyrics_nothing_playing_body">Play a song in any app and its lyrics will show up here.</string>
+    <string name="live_lyrics_unsynced">Unsynced lyrics</string>
+    <string name="live_lyrics_source">Lyrics from %1$s</string>
+    <string name="live_lyrics_source_file">Lyrics from your song file</string>
+    <string name="live_lyrics_play">Play</string>
+    <string name="live_lyrics_pause">Pause</string>
+    <string name="live_lyrics_previous">Previous</string>
+    <string name="live_lyrics_next">Next</string>
 </resources>

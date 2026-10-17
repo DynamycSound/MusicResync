@@ -74,6 +74,14 @@ class FilenameParserTest {
     }
 
     @Test
+    fun `clean keeps paired brackets and drops dangling ones`() {
+        assertEquals("Šabac je ceo (Remix)", TextMatch.cleanTitleArtist("Šabac je ceo (Remix)"))
+        assertEquals("Song [Live]", TextMatch.cleanTitleArtist("Song [Live] -"))
+        assertEquals("Song", TextMatch.cleanTitleArtist("Song ("))
+        assertEquals("Song", TextMatch.cleanTitleArtist(") Song"))
+    }
+
+    @Test
     fun `bare video parenthetical is stripped and primary artist split on x`() {
         val cands = titlesFor("/m/\$UICIDEBOY\$ x TRAVIS BARKER - ALIENS ARE GHOSTS (Drift Music Video).mp3")
         val primary = cands.first { it.strategy == MatchStrategy.FILENAME_PRIMARY_ARTIST }

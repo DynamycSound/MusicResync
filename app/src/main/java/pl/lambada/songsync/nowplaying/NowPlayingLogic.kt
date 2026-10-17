@@ -40,11 +40,24 @@ object NowPlayingLogic {
     private fun collapse(s: String): String = TextMatch.normalizeForCompare(s).replace(" ", "")
 
     /**
+     * Words that mark the part after a dash as a version of the song ("Let It Be - Remastered 2009",
+     * "Love Story - Taylor's Version", "Song - Live at Wembley") rather than the title of an "Artist - Title" video.
+     */
+    private val versionWords = Regex(
+        """\b(?:remaster(?:ed)?|live|remix|mix|edit|version|mono|stereo|acoustic|demo|instrumental|radio|extended|""" +
+            """bonus|single|unplugged|session|slowed|sped|reverb|from|feat|ft|\d{4})\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val bracketed = Regex("""[(\[][^)\]]*[)\]]""")
+
+    private fun isVersionSuffix(s: String): Boolean = versionWords.containsMatchIn(bracketed.replace(s, " "))
+
+    /**
      * Turns player metadata into a lyrics query. Music apps usually report clean tags and pass through unchanged
      * (apart from noise like "(Official Video)"). Video apps report "Artist - Title (Official Video)" with the
-     * uploading channel ("ArtistVEVO", "Artist - Topic") as the artist; when the part before the dash is that same
-     * artist (or no artist is known) it is split into artist/title. A dash in a real title ("Song - Live") is left
-     * alone because its left half does not match the artist.
+     * uploading channel as the artist: "ArtistVEVO", "Artist - Topic", but just as often a label or a third-party
+     * channel ("Generacija Zed", "Lyrical Lemonade"). So an "X - Y" title is split into artist X / title Y unless Y
+     * reads like a version suffix of a song by the reported artist ("Let It Be - Remastered 2009").
      */
     fun searchQuery(title: String, artist: String?): NowPlayingQuery {
         val rawArtist = artist?.trim().orEmpty()
@@ -61,12 +74,24 @@ object NowPlayingLogic {
                 (leftC.isNotEmpty() && artistC.isNotEmpty() && (
                     leftC == artistC ||
                         (minOf(leftC.length, artistC.length) >= 3 && (leftC.contains(artistC) || artistC.contains(leftC)))
-                    ))
+                    )) ||
+                !isVersionSuffix(right)
             if (leftIsArtist) {
                 return NowPlayingQuery(title = TextMatch.cleanTitleArtist(right).ifBlank { right }, artist = left)
             }
         }
         return NowPlayingQuery(title = cleanTitle, artist = cleanArtist)
+    }
+
+    /**
+     * Where playback is right now. Players report a position only when it jumps (play, pause, seek, new track),
+     * stamped with [lastUpdateMs] on the elapsed-realtime clock; while playing it advances at [speed] from there.
+     * Returns null when the player doesn't report a position at all.
+     */
+    fun livePositionMs(playing: Boolean, positionMs: Long, lastUpdateMs: Long, speed: Float, nowMs: Long): Long? {
+        if (positionMs < 0) return null
+        if (!playing || lastUpdateMs <= 0) return positionMs
+        return (positionMs + ((nowMs - lastUpdateMs) * speed).toLong()).coerceAtLeast(0)
     }
 
     /** Max difference between the player's and the file's duration for them to count as the same recording. */

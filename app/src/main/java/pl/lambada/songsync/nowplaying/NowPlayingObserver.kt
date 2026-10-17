@@ -22,6 +22,8 @@ data class NowPlayingTrack(
     /** Human-readable name of the playing app ("Spotify"), null when the app isn't visible to us. */
     val appLabel: String?,
     val artwork: Bitmap?,
+    /** The playing session, used by the live lyrics view to follow its position and send play/pause/seek. */
+    val controller: MediaController? = null,
 )
 
 /**
@@ -124,12 +126,16 @@ class NowPlayingObserver(
             artwork = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                 ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
                 ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON),
+            controller = controller,
         )
     }
 
     private fun publish(track: NowPlayingTrack?) {
-        // Artwork often arrives in a second metadata update, so "has art" is part of the identity.
-        val key = track?.let { listOf(it.packageName, it.title, it.artist, it.album, it.durationMs, it.artwork != null) }
+        // Artwork often arrives in a second metadata update, so "has art" is part of the identity. The session
+        // token is too: a player that restarts its session hands out a new controller for the same song.
+        val key = track?.let {
+            listOf(it.packageName, it.title, it.artist, it.album, it.durationMs, it.artwork != null, it.controller?.sessionToken)
+        }
         if (key == lastKey && lastKey != null) return
         lastKey = key
         onTrackChanged(track)

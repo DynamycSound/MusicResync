@@ -1,9 +1,7 @@
 package pl.lambada.songsync.nowplaying
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -57,17 +55,14 @@ import kotlinx.coroutines.withContext
 import pl.lambada.songsync.R
 import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.ui.LyricsFetchScreen
-import pl.lambada.songsync.ui.PlayerScreen
+import pl.lambada.songsync.ui.ScreenLiveLyrics
 import pl.lambada.songsync.ui.components.SwitchItem
 import pl.lambada.songsync.util.rememberPreference
-import java.io.File
-import java.io.IOException
 
 /**
  * Optional "Now playing" entry at the top of Home (issue #19). Without notification access it is either nothing or,
- * once, a small dismissible card offering to enable it. With access it shows the track another app is playing and
- * tapping it opens the same flow as tapping that song in the list: the lyrics search (pre-filled, already running)
- * or, for a library song that already has lyrics, the player.
+ * once, a small dismissible card offering to enable it. With access it shows the track another app is playing;
+ * tapping it opens live, scrolling lyrics for it, or the lyrics search when it is a library song still missing lyrics.
  *
  * @param librarySongs the loaded library, used to recognise a song a local player is playing.
  * @param hasLyrics whether a library song already has (synced) lyrics, as the Home list decides it.
@@ -136,7 +131,7 @@ fun NowPlayingHomeSection(
                     opening = true
                     scope.launch {
                         try {
-                            openLyricsFor(context, playing, librarySongs, hasLyrics, navController)
+                            openLyricsFor(playing, librarySongs, hasLyrics, navController)
                         } finally {
                             opening = false
                         }
@@ -147,9 +142,12 @@ fun NowPlayingHomeSection(
     }
 }
 
-/** Routes a tap on the card exactly like a tap on the matching library row, or to a pre-filled online search. */
+/**
+ * Routes a tap on the card. A library song without lyrics opens the lyrics search for that file, exactly like
+ * tapping its row, so its lyrics can be saved. Everything else (streamed songs, videos, library songs that already
+ * have lyrics) opens the live lyrics view, which follows the playing app and saves nothing.
+ */
 private suspend fun openLyricsFor(
-    context: Context,
     track: NowPlayingTrack,
     librarySongs: List<Song>,
     hasLyrics: (Song) -> Boolean,
@@ -161,51 +159,18 @@ private suspend fun openLyricsFor(
             ?: NowPlayingLogic.findLocalMatch(query.title, query.artist, track.durationMs, librarySongs)
     }
     val localPath = local?.filePath
-    if (local != null && localPath != null) {
-        if (hasLyrics(local)) {
-            navController.navigate(
-                PlayerScreen(filePath = localPath, songName = local.title ?: track.title, artists = local.artist ?: "")
+    if (local != null && localPath != null && !hasLyrics(local)) {
+        navController.navigate(
+            LyricsFetchScreen(
+                songName = local.title ?: track.title,
+                artists = local.artist ?: "",
+                coverUri = local.imgUri?.toString(),
+                filePath = localPath,
             )
-        } else {
-            navController.navigate(
-                LyricsFetchScreen(
-                    songName = local.title ?: track.title,
-                    artists = local.artist ?: "",
-                    coverUri = local.imgUri?.toString(),
-                    filePath = localPath,
-                )
-            )
-        }
+        )
         return
     }
-
-    // Not in the library (streaming, video…): an empty file path is the fetch screen's "now playing" mode; it
-    // searches right away and saves to Downloads/MusicResync.
-    val cover = track.artwork?.let { withContext(Dispatchers.IO) { saveArtwork(context, it) } }
-    navController.navigate(
-        LyricsFetchScreen(songName = query.title, artists = query.artist, coverUri = cover, filePath = "")
-    )
-}
-
-/**
- * Writes the player's artwork to the cache so the fetch screen can show it like any other cover. A fresh name per
- * call keeps the image loader from serving the previous track's art; older files are removed.
- */
-private fun saveArtwork(context: Context, artwork: Bitmap): String? {
-    val dir = File(context.cacheDir, "now_playing").apply { mkdirs() }
-    dir.listFiles()?.forEach { it.delete() }
-    val file = File(dir, "cover_${System.currentTimeMillis()}.jpg")
-    return try {
-        val written = file.outputStream().use { artwork.compress(Bitmap.CompressFormat.JPEG, 90, it) }
-        if (written) file.absolutePath else null
-    } catch (e: IOException) {
-        Log.w("NowPlaying", "Could not cache now-playing artwork", e)
-        null
-    } catch (e: IllegalStateException) {
-        // The player's bitmap was recycled/unreadable: the fetch screen simply shows no cover.
-        Log.w("NowPlaying", "Now-playing artwork not readable", e)
-        null
-    }
+    navController.navigate(ScreenLiveLyrics)
 }
 
 @Composable

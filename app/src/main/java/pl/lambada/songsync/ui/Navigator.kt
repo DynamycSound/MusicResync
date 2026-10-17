@@ -12,6 +12,8 @@ import androidx.navigation.toRoute
 import kotlinx.serialization.Serializable
 import pl.lambada.songsync.data.UserSettingsController
 import pl.lambada.songsync.data.remote.lyrics_providers.LyricsProviderService
+import pl.lambada.songsync.nowplaying.LiveLyricsScreen
+import pl.lambada.songsync.nowplaying.LiveLyricsViewModel
 import pl.lambada.songsync.ui.common.animatedComposable
 import pl.lambada.songsync.ui.screens.batch.BatchOptionsScreen
 import pl.lambada.songsync.ui.screens.batch.BatchProgressScreen
@@ -112,6 +114,18 @@ fun Navigator(
                     navController = navController
                 )
             }
+            animatedComposable<ScreenLiveLyrics> { entry ->
+                // Recognising a library song needs the loaded library: reuse the Home screen's view model.
+                val homeEntry = remember(entry) { navController.getBackStackEntry(ScreenHome) }
+                val homeViewModel = viewModel(viewModelStoreOwner = homeEntry) {
+                    HomeViewModel(userSettingsController, lyricsProviderService)
+                }
+                LiveLyricsScreen(
+                    viewModel = viewModel { LiveLyricsViewModel(userSettingsController, lyricsProviderService) },
+                    librarySongs = homeViewModel.allSongs.orEmpty(),
+                    onBack = { navController.popBackStack() },
+                )
+            }
             animatedComposable<PlayerScreen> {
                 val args = it.toRoute<PlayerScreen>()
                 SyncedLyricsPlayerScreen(
@@ -175,6 +189,10 @@ object ScreenBatchOptions
 
 @Serializable
 object ScreenBatchProgress
+
+/** Live, read-only lyrics for the song another app is playing (opened from the Home "Now playing" card). */
+@Serializable
+object ScreenLiveLyrics
 
 @Serializable
 data class PlayerScreen(

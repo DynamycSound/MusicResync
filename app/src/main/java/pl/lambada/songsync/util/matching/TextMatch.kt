@@ -89,8 +89,26 @@ object TextMatch {
         s = s.replace('_', ' ')
         s = s.replace(Regex("""[\s]+"""), " ").trim()
         // Drop dangling separators/brackets left behind by removals.
-        s = s.trim(' ', '-', '|', '/', '(', ')', '[', ']', '.', ',')
-        return s.trim()
+        return trimDangling(s)
+    }
+
+    /**
+     * Trims separators off both ends, and brackets only when they are left unpaired: "Song (" / ") Song" lose the
+     * bracket, but "Šabac je ceo (Remix)" keeps its closing one (it used to come out as "Šabac je ceo (Remix").
+     */
+    private fun trimDangling(input: String): String {
+        var s = input
+        while (true) {
+            val before = s
+            s = s.trim(' ', '-', '|', '/', '.', ',')
+            if (s.startsWith(')') || s.startsWith(']')) s = s.drop(1)
+            if (s.endsWith('(') || s.endsWith('[')) s = s.dropLast(1)
+            if (s.endsWith(')') && s.count { it == ')' } > s.count { it == '(' }) s = s.dropLast(1)
+            if (s.endsWith(']') && s.count { it == ']' } > s.count { it == '[' }) s = s.dropLast(1)
+            if (s.startsWith('(') && s.count { it == '(' } > s.count { it == ')' }) s = s.drop(1)
+            if (s.startsWith('[') && s.count { it == '[' } > s.count { it == ']' }) s = s.drop(1)
+            if (s == before) return s
+        }
     }
 
     /**

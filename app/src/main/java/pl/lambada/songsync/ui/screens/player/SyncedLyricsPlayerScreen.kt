@@ -84,6 +84,7 @@ import pl.lambada.songsync.util.embedCoverInFile
 import pl.lambada.songsync.util.embedLyricsInFile
 import pl.lambada.songsync.util.getFileDescriptorFromPath
 import pl.lambada.songsync.util.parseOffsetTagMs
+import pl.lambada.songsync.util.parseSyncedLrc
 import pl.lambada.songsync.util.cache.SongCache
 import pl.lambada.songsync.util.cache.SongCacheEntry
 import pl.lambada.songsync.util.ext.BackPressHandler
@@ -94,43 +95,8 @@ import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-private data class LyricLine(val timeMs: Long, val text: String)
-
 /** Half-width of the stable, absolute offset slider range (±10s). A saved -3.9s sits visibly left of centre. */
 private const val OFFSET_RANGE_MS = 10000f
-
-private val timestamp = Regex("""\[(\d{1,2}):(\d{2})[.:](\d{1,3})]""")
-
-/** Enhanced-LRC word timestamps ("<00:40.490>word") — line-level display must not show them as text. */
-private val wordTimestamp = Regex("""<(\d{1,2}):(\d{2})[.:](\d{1,3})>""")
-
-private fun parseSyncedLrc(raw: String): List<LyricLine> {
-    val out = ArrayList<LyricLine>()
-    for (line in raw.lineSequence()) {
-        val matches = timestamp.findAll(line).toList()
-        if (matches.isEmpty()) {
-            // Word-by-word files may carry ONLY inline "<mm:ss.xx>" stamps on a line: use the first as the
-            // line time so these files still play instead of parsing to nothing.
-            val word = wordTimestamp.find(line) ?: continue
-            val (mm, ss, frac) = word.destructured
-            val ms = mm.toLong() * 60_000 + ss.toLong() * 1_000 + (frac.padEnd(3, '0').take(3)).toLong()
-            val text = wordTimestamp.replace(line, " ").replace(Regex("""\s+"""), " ").trim()
-            out.add(LyricLine(ms, text))
-            continue
-        }
-        // Strip inline word stamps from the display text — they belong to the timing model, not the lyrics
-        // (they were being shown raw: "<00:40.490>I <00:40.666>was ...").
-        val text = wordTimestamp.replace(line.substring(matches.last().range.last + 1), "")
-            .replace(Regex("""\s+"""), " ").trim()
-        for (m in matches) {
-            val (mm, ss, frac) = m.destructured
-            val ms = mm.toLong() * 60_000 + ss.toLong() * 1_000 +
-                    (frac.padEnd(3, '0').take(3)).toLong()
-            out.add(LyricLine(ms, text))
-        }
-    }
-    return out.sortedBy { it.timeMs }
-}
 
 private fun fmt(ms: Long): String {
     val totalSec = (ms / 1000).coerceAtLeast(0)

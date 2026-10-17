@@ -74,12 +74,8 @@ class LyricsFetchViewModel(
 
     var lyricsFetchState by mutableStateOf<LyricsFetchState>(LyricsFetchState.NotSubmitted)
 
-    /**
-     * Cleaned local path used both for saving the .lrc and as the persistent cache key. Null for a track that is
-     * not a library file (the "Now playing" card passes an empty path for those), so nothing tries to read, tag or
-     * cache a file that doesn't exist.
-     */
-    private val cachePath: String? get() = source?.filePath?.replace(".nowplaying", "")?.takeIf { it.isNotBlank() }
+    /** Cleaned local path used both for saving the .lrc and as the persistent cache key. */
+    private val cachePath: String? get() = source?.filePath?.replace(".nowplaying", "")
 
     /** True once this screen has actually persisted lyrics/cover changes, so backing out should no longer warn. */
     var hasPersistedLyricsChange by mutableStateOf(false)
@@ -124,20 +120,20 @@ class LyricsFetchViewModel(
                 // by title/artist/duration, and pick the best -- the same smart engine the batch uses. This is
                 // what makes a junk tag like "Kendrick Lamar - HUMBLE. / KendrickLamarVEVO" actually resolve,
                 // and stops a wrong "first result" (e.g. a random remix) from being accepted.
-                val durationSec = cachePath?.let { readDurationSeconds(context, it) }
+                val durationSec = source?.filePath?.let { readDurationSeconds(context, it) }
                 val local = LocalTrack(
                     querySongName,
                     queryArtistName.takeIf { !TextMatch.isJunkArtist(it) },
                     durationSec,
                 )
-                val parsed = FilenameParser.candidates(querySongName, queryArtistName, cachePath)
+                val parsed = FilenameParser.candidates(querySongName, queryArtistName, source?.filePath)
                     .ifEmpty { listOf(QueryCandidate(querySongName, queryArtistName ?: "", MatchStrategy.TAGS)) }
 
                 // Cover-driven identification (same as batch): a file with no usable artist anywhere is only
                 // identifiable by its embedded album art — discover the identity and lead the search with it.
                 val candidates = if (artistGuessesFor(local, parsed).isEmpty()) {
                     val id = runCatching {
-                        CoverIdentity.discover(context, cachePath, parsed.map { it.asSearchString() }, durationSec)
+                        CoverIdentity.discover(context, source?.filePath, parsed.map { it.asSearchString() }, durationSec)
                     }.getOrNull()
                     if (id != null) listOf(QueryCandidate(id.title, id.artist, MatchStrategy.COVER_IDENTITY)) + parsed
                     else parsed
@@ -248,9 +244,9 @@ class LyricsFetchViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             providerProbes[provider] = ProviderProbe.LOADING
             try {
-                val durationSec = cachePath?.let { readDurationSeconds(context, it) }
+                val durationSec = source?.filePath?.let { readDurationSeconds(context, it) }
                 val local = LocalTrack(querySongName, queryArtistName, durationSec)
-                val candidates = FilenameParser.candidates(querySongName, queryArtistName, cachePath)
+                val candidates = FilenameParser.candidates(querySongName, queryArtistName, source?.filePath)
                     .ifEmpty { listOf(QueryCandidate(querySongName, queryArtistName ?: "", MatchStrategy.TAGS)) }
 
                 val hits = matcher.search(local, candidates, MatchConfig(providerOrder = listOf(provider)))
@@ -307,7 +303,7 @@ class LyricsFetchViewModel(
         lyricsProviderService.getCoverCandidates(
             song.songName ?: querySongName,
             song.artistName ?: queryArtistName,
-            cachePath,
+            source?.filePath,
         )
 
     fun markLyricsWillBeSavedByPlayer() {

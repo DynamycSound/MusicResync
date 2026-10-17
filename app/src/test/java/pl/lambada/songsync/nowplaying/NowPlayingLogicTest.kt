@@ -86,10 +86,52 @@ class NowPlayingLogicTest {
 
     @Test
     fun `third party uploader channel is not mistaken for the artist`() {
-        // Left side doesn't match the channel: keep the title whole (the fetch screen's parser tries both readings).
+        // The channel is a video producer, not the singer: the artist is the part before the dash.
         val q = NowPlayingLogic.searchQuery("Juice WRLD - Lucid Dreams (Dir. by @_ColeBennett_)", "Lyrical Lemonade")
-        assertEquals("Lyrical Lemonade", q.artist)
-        assertTrue(q.title.startsWith("Juice WRLD - Lucid Dreams"))
+        assertEquals("Juice WRLD", q.artist)
+        assertTrue(q.title.startsWith("Lucid Dreams"))
+    }
+
+    @Test
+    fun `label channel is not mistaken for the artist`() {
+        assertEquals(
+            NowPlayingQuery("HILTON HOTEL BARÇA", "Nucci"),
+            NowPlayingLogic.searchQuery("Nucci - HILTON HOTEL BARÇA (Official Video)", "Generacija Zed"),
+        )
+    }
+
+    @Test
+    fun `version suffixes after a dash stay part of the title`() {
+        assertEquals(
+            NowPlayingQuery("Love Story - Taylor's Version", "Taylor Swift"),
+            NowPlayingLogic.searchQuery("Love Story - Taylor's Version", "Taylor Swift"),
+        )
+        assertEquals(
+            NowPlayingQuery("Yellow - Live in Buenos Aires", "Coldplay"),
+            NowPlayingLogic.searchQuery("Yellow - Live in Buenos Aires", "Coldplay"),
+        )
+    }
+
+    @Test
+    fun `brackets on a video title are kept whole`() {
+        assertEquals(
+            NowPlayingQuery("Šabac je ceo (Remix)", "Seksi"),
+            NowPlayingLogic.searchQuery("Šabac je ceo (Remix)", "Seksi - Topic"),
+        )
+    }
+
+    // --- live position ----------------------------------------------------------------------------------------
+
+    @Test
+    fun `live position advances from the last report while playing`() {
+        assertEquals(96_900L, NowPlayingLogic.livePositionMs(true, 0, 1_000, 1f, 97_900))
+        assertEquals(10_000L + 2_000, NowPlayingLogic.livePositionMs(true, 10_000, 5_000, 2f, 6_000))
+    }
+
+    @Test
+    fun `live position is frozen while paused and unknown when not reported`() {
+        assertEquals(42_000L, NowPlayingLogic.livePositionMs(false, 42_000, 1_000, 1f, 99_000))
+        assertNull(NowPlayingLogic.livePositionMs(true, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1_000, 1f, 2_000))
     }
 
     @Test
