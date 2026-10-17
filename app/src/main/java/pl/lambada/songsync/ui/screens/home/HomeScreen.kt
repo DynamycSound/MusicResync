@@ -26,6 +26,10 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -56,6 +60,7 @@ import pl.lambada.songsync.ui.LyricsFetchScreen
 import pl.lambada.songsync.ui.ScreenSettings
 import pl.lambada.songsync.ui.screens.home.components.FilterAndSongCount
 import pl.lambada.songsync.ui.screens.home.components.FiltersDialog
+import pl.lambada.songsync.ui.screens.home.components.HiddenSongsDialog
 import pl.lambada.songsync.ui.screens.home.components.HomeAppBar
 import pl.lambada.songsync.ui.screens.home.components.HomeSearchBar
 import pl.lambada.songsync.ui.screens.home.components.HomeSearchThing
@@ -81,6 +86,8 @@ fun HomeScreen(
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
 
     // ensureSongsLoaded (not a raw reload): this effect re-fires every time Home re-enters composition (back
     // gesture from Settings/fetch/player), and unconditionally dropping the cache here re-ran the full
@@ -126,10 +133,24 @@ fun HomeScreen(
                     onBatchDownloadRequest = { navController.navigate(pl.lambada.songsync.ui.ScreenBatchOptions) },
                     onSelectAllSongsRequest = viewModel::selectAllDisplayingSongs,
                     onInvertSongSelectionRequest = viewModel::invertSongSelection,
-                    cachedSize = cachedSize
+                    cachedSize = cachedSize,
+                    onHideSelectedRequest = {
+                        val hidden = viewModel.hideSelectedSongs()
+                        if (hidden.isNotEmpty()) snackbarScope.launch {
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            val result = snackbarHostState.showSnackbar(
+                                message = context.resources.getQuantityString(R.plurals.songs_hidden, hidden.size, hidden.size),
+                                actionLabel = context.getString(R.string.undo),
+                                duration = SnackbarDuration.Short,
+                            )
+                            if (result == SnackbarResult.ActionPerformed) viewModel.unhideSongs(hidden)
+                        }
+                    }
                 )
             }
         },
+        // Sits above the batch FAB (56dp + 20dp bottom padding) so the Undo action never covers it.
+        snackbarHost = { SnackbarHost(snackbarHostState, modifier = Modifier.padding(bottom = 76.dp)) },
         // The standalone "empty search" FAB was removed: every song row already routes to search/play on tap,
         // so a blank manual-search entry point is redundant.
         bottomBar = { Spacer(Modifier.navigationBarsPadding()) } // fixing broken edge to edge here
@@ -182,6 +203,7 @@ fun HomeScreenLoaded(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val refreshState = rememberPullToRefreshState()
+    var showHiddenSongs by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
     PullToRefreshBox(
@@ -272,7 +294,17 @@ fun HomeScreenLoaded(
                             onDismiss = { viewModel.showFilters = false },
                             onFilterChange = { viewModel.filterSongs() },
                             onHideLyricsChange = viewModel::onHideLyricsChange,
-                            onToggleFolderBlacklist = viewModel::onToggleFolderBlacklist
+                            onToggleFolderBlacklist = viewModel::onToggleFolderBlacklist,
+                            hiddenSongsCount = viewModel.userSettingsController.hiddenSongs.size,
+                            onHiddenSongsClick = { showHiddenSongs = true }
+                        )
+                    }
+
+                    if (showHiddenSongs) {
+                        HiddenSongsDialog(
+                            entries = viewModel.hiddenSongEntries(),
+                            onUnhide = viewModel::unhideSongs,
+                            onDismiss = { showHiddenSongs = false }
                         )
                     }
                 }

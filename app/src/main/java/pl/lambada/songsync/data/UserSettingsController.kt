@@ -7,6 +7,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -82,6 +83,11 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         get() = providerOrder.filterNot { it in disabledProviders }.ifEmpty { listOf(Providers.LRCLIB) }
 
     var hideLyrics by mutableStateOf(prefs[hideLyricsKey] ?: false)
+        private set
+
+    // Songs the user hid from the home list (issue #18), by file path. A string SET, not a comma-joined string,
+    // so paths containing commas round-trip safely.
+    var hiddenSongs by mutableStateOf(prefs[hiddenSongsKey] ?: emptySet())
         private set
 
     var includeTranslation by mutableStateOf(prefs[includeTranslationKey] ?: false)
@@ -188,6 +194,11 @@ class UserSettingsController(private val dataStore: DataStore<Preferences>) {
         hideLyrics = to
     }
 
+    fun updateHiddenSongs(to: Set<String>) {
+        dataStore.set(hiddenSongsKey, to)
+        hiddenSongs = to
+    }
+
     fun updateIncludeTranslation(to: Boolean) {
         dataStore.set(includeTranslationKey, to)
         includeTranslation = to
@@ -291,6 +302,7 @@ private val blacklistedFoldersKey = stringPreferencesKey("blacklist")
 private val providerOrderKey = stringPreferencesKey("provider_fallback_order")
 private val disabledProvidersKey = stringPreferencesKey("disabled_providers")
 private val hideLyricsKey = booleanPreferencesKey("hide_lyrics")
+private val hiddenSongsKey = stringSetPreferencesKey("hidden_songs")
 private val includeTranslationKey = booleanPreferencesKey("include_translation")
 private val includeRomanizationKey = booleanPreferencesKey("include_romanization")
 private val multiPersonWordByWordKey = booleanPreferencesKey("multi_person_word_by_word")

@@ -7,6 +7,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,6 +39,7 @@ fun HomeAppBar(
     onSelectAllSongsRequest: () -> Unit,
     onInvertSongSelectionRequest: () -> Unit,
     cachedSize: Int,
+    onHideSelectedRequest: (() -> Unit)? = null,
 ) {
     MediumTopAppBar(
         navigationIcon = {
@@ -88,6 +90,15 @@ fun HomeAppBar(
                             id = R.string.invert_selection
                         )
                     )
+                }
+                // Issue #18: hide the selected song(s) from the list (long-press a song, then tap this).
+                if (onHideSelectedRequest != null) {
+                    IconButton(onClick = onHideSelectedRequest) {
+                        Icon(
+                            imageVector = Icons.Outlined.VisibilityOff,
+                            contentDescription = stringResource(R.string.hide_from_list)
+                        )
+                    }
                 }
                 var expanded by remember { mutableStateOf(false) }
                 IconButton(onClick = { expanded = !expanded }) {

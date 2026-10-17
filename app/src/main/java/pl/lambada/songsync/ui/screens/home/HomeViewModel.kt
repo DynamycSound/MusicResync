@@ -31,6 +31,7 @@ import pl.lambada.songsync.domain.model.SongInfo
 import pl.lambada.songsync.domain.model.SortOrders
 import pl.lambada.songsync.domain.model.SortValues
 import pl.lambada.songsync.util.EmbeddedLyrics
+import pl.lambada.songsync.util.HiddenSongs
 import pl.lambada.songsync.util.batch.BatchDownloadController
 import pl.lambada.songsync.util.cache.SongCache
 import pl.lambada.songsync.util.matching.LrcPrescan
@@ -170,12 +171,19 @@ class HomeViewModel(
             .filterNotNull()
             // simple .combine wasn't enough apparently, so im using this
             .flatMapLatest { all ->
-                _cachedFilteredSongs.combine(_searchResults) { filtered, searchResults ->
-                    when {
+                combine(
+                    _cachedFilteredSongs,
+                    _searchResults,
+                    snapshotFlow { userSettingsController.hiddenSongs }
+                ) { filtered, searchResults, hidden ->
+                    val shown = when {
                         searchQuery.isNotEmpty() -> searchResults
                         filtered.isNotEmpty() -> filtered
                         else -> all
                     }
+                    // Hidden songs (issue #18) are dropped last, so they're out of the list, counts, tabs, search,
+                    // select-all and batch download alike. No-op (same list) when nothing is hidden.
+                    HiddenSongs.exclude(shown, hidden) { it.filePath }
                 }
             }.collect { newDisplaySongs ->
                 displaySongs = newDisplaySongs
@@ -465,6 +473,27 @@ class HomeViewModel(
             )
         }
     }
+
+    /**
+     * Hides the selected songs from the list (issue #18) and leaves selection mode. Returns the paths that were
+     * hidden so the caller can offer Undo.
+     */
+    fun hideSelectedSongs(): List<String> {
+        val paths = selectedSongs.toList()
+        if (paths.isEmpty()) return paths
+        userSettingsController.updateHiddenSongs(HiddenSongs.hide(userSettingsController.hiddenSongs, paths))
+        selectedSongs.clear()
+        if (searchQuery.isNotEmpty()) showingSearch = true // same as deselecting the last song
+        return paths
+    }
+
+    fun unhideSongs(paths: Collection<String>) {
+        userSettingsController.updateHiddenSongs(HiddenSongs.unhide(userSettingsController.hiddenSongs, paths))
+    }
+
+    /** Hidden paths paired with their song (null if the file is no longer in the library), for the unhide dialog. */
+    fun hiddenSongEntries(): List<Pair<String, Song?>> =
+        HiddenSongs.resolve(userSettingsController.hiddenSongs, cachedSongs ?: emptyList()) { it.filePath }
 
     suspend fun getSongInfo(query: SongInfo): SongInfo? =
         lyricsProviderService.getSongInfo(query, provider = userSettingsController.selectedProvider)

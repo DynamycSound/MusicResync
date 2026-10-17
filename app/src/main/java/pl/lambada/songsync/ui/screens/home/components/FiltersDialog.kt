@@ -50,7 +50,9 @@ fun FiltersDialog(
     onDismiss: () -> Unit,
     onFilterChange: () -> Unit,
     onHideLyricsChange: (Boolean) -> Unit,
-    onToggleFolderBlacklist: (String, Boolean) -> Unit
+    onToggleFolderBlacklist: (String, Boolean) -> Unit,
+    hiddenSongsCount: Int = 0,
+    onHiddenSongsClick: () -> Unit = {},
 ) {
     var showFolders by rememberSaveable { mutableStateOf(false) }
 
@@ -104,6 +106,11 @@ fun FiltersDialog(
                             contentDescription = null,
                         )
                     }
+                }
+                // Issue #18: only present once the user has hidden a song.
+                if (hiddenSongsCount > 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HiddenSongsFilterRow(count = hiddenSongsCount, onClick = onHiddenSongsClick)
                 }
                 Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Spacer(modifier = Modifier.weight(1f))
