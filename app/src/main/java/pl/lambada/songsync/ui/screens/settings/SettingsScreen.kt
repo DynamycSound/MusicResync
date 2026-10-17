@@ -135,6 +135,9 @@ fun SettingsScreen(
                 )
             }
 
+            item { SettingsHeadLabel(label = stringResource(R.string.now_playing)) }
+            item { pl.lambada.songsync.nowplaying.NowPlayingSettingItem() }
+
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                 item { SettingsHeadLabel(label = stringResource(R.string.sd_card)) }
                 item {

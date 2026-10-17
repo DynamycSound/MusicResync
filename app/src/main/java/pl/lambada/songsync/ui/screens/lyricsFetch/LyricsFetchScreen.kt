@@ -260,7 +260,7 @@ fun SharedTransitionScope.LyricsFetchScreen(
                         // not save here — the lyrics are passed to the player and written when the user presses
                         // Apply (or simply backs out of the preview, which now behaves like Apply for unsaved
                         // preview lyrics so they are not discarded).
-                        onAdjustTiming = viewModel.source?.let { src ->
+                        onAdjustTiming = viewModel.source?.takeIf { it.filePath.isNotBlank() }?.let { src ->
                             { lyrics: String ->
                                 val path = src.filePath.replace(".nowplaying", "")
                                 viewModel.markLyricsWillBeSavedByPlayer()
@@ -282,7 +282,9 @@ fun SharedTransitionScope.LyricsFetchScreen(
                         selectedProvider = viewModel.activeProvider,
                         providerProbes = viewModel.providerProbes,
                         onRetryProvider = { viewModel.retryProvider(it, context) },
-                        onRequestCovers = viewModel.source?.let { { viewModel.fetchCoverCandidates(queryState.song) } },
+                        // Covers can only be embedded into a library file, not into a "Now playing" stream (empty path).
+                        onRequestCovers = viewModel.source?.takeIf { it.filePath.isNotBlank() }
+                            ?.let { { viewModel.fetchCoverCandidates(queryState.song) } },
                         onPickCover = { viewModel.embedCover(it, context) },
                         hasCover = viewModel.localHasCover,
                     )
