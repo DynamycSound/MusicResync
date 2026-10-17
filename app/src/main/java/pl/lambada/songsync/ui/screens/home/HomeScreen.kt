@@ -298,14 +298,16 @@ fun HomeScreenLoaded(
                     if (viewModel.showFilters) {
                         FiltersDialog(
                             hideLyrics = viewModel.userSettingsController.hideLyrics,
-                            folders = viewModel.getSongFolders(context),
-                            blacklistedFolders = viewModel.userSettingsController.blacklistedFolders,
+                            folderSongCounts = viewModel.getFolderSongCounts(context),
+                            folderFilter = viewModel.userSettingsController.folderFilter,
                             onDismiss = { viewModel.showFilters = false },
                             onFilterChange = { viewModel.filterSongs() },
                             onHideLyricsChange = viewModel::onHideLyricsChange,
-                            onToggleFolderBlacklist = viewModel::onToggleFolderBlacklist,
+                            onSetFolderVisible = viewModel::setFolderVisible,
+                            onSetAllFoldersVisible = viewModel::setAllFoldersVisible,
+                            onFolderFilterModeChange = viewModel::setFolderFilterMode,
                             hiddenSongsCount = viewModel.userSettingsController.hiddenSongs.size,
-                            onHiddenSongsClick = { showHiddenSongs = true }
+                            onHiddenSongsClick = { showHiddenSongs = true },
                         )
                     }
 

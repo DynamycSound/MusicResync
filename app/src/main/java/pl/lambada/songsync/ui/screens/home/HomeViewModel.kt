@@ -35,6 +35,9 @@ import pl.lambada.songsync.util.EmbeddedLyrics
 import pl.lambada.songsync.util.HiddenSongs
 import pl.lambada.songsync.util.batch.BatchDownloadController
 import pl.lambada.songsync.util.cache.SongCache
+import pl.lambada.songsync.util.folders.FolderFilterMode
+import pl.lambada.songsync.util.folders.buildFolderTree
+import pl.lambada.songsync.util.folders.folderOf
 import pl.lambada.songsync.util.matching.LrcPrescan
 import pl.lambada.songsync.util.matching.LyricState
 import pl.lambada.songsync.util.matching.PrescanResult
@@ -110,12 +113,12 @@ class HomeViewModel(
 
     var searchQuery by mutableStateOf("")
 
-    // Filter settings
-    private var cachedFolders: MutableList<String>? = null
-    private var hideFolders = userSettingsController.blacklistedFolders.isNotEmpty()
+    // Filter settings: song folder -> number of songs in it (insertion order = first appearance)
+    private var cachedFolders: Map<String, Int>? = null
 
-    // filtered folders/lyrics songs
-    private var _cachedFilteredSongs = MutableStateFlow<List<Song>>(emptyList())
+    // filtered folders/lyrics songs; null = no filter active (show all). Distinct from an empty list, which means
+    // the filters hide every song (e.g. an empty folder whitelist) and must show nothing, not fall back to all.
+    private var _cachedFilteredSongs = MutableStateFlow<List<Song>?>(null)
 
     // searching
     private var _searchResults = MutableStateFlow<List<Song>>(emptyList())
@@ -123,8 +126,7 @@ class HomeViewModel(
     var displaySongs by mutableStateOf(
         when {
             searchQuery.isNotEmpty() -> _searchResults.value
-            _cachedFilteredSongs.value.isNotEmpty() -> _cachedFilteredSongs.value
-            else -> allSongs ?: listOf()
+            else -> _cachedFilteredSongs.value ?: allSongs ?: listOf()
         }
     )
 
@@ -139,7 +141,10 @@ class HomeViewModel(
             // tab filter (All / Has lyrics / No lyrics), not just the search/folder-filtered displaySongs.
             tabFilteredSongs
         else
-            (allSongs ?: listOf()).filter { selectedSongs.contains(it.filePath) }.toList()
+            // Folder filter re-checked so songs selected before their folder was hidden aren't downloaded.
+            (allSongs ?: listOf()).filter {
+                selectedSongs.contains(it.filePath) && userSettingsController.folderFilter.isSongVisible(it.filePath)
+            }
 
         // "Skip songs with no lyrics" (on by default): drop songs a previous run already searched and came up
         // empty for, so a rerun doesn't keep asking the providers for songs that have nothing. The marker is a
@@ -184,7 +189,7 @@ class HomeViewModel(
                 ) { filtered, searchResults, hidden ->
                     val shown = when {
                         searchQuery.isNotEmpty() -> searchResults
-                        filtered.isNotEmpty() -> filtered
+                        filtered != null -> filtered
                         else -> all
                     }
                     // Hidden songs (issue #18) are dropped last, so they're out of the list, counts, tabs, search,
@@ -381,15 +386,11 @@ class HomeViewModel(
     fun updateSearchResults(query: String) {
         viewModelScope.launch(Dispatchers.IO) {
             if (query.isEmpty()) {
-                _searchResults.value = _cachedFilteredSongs.value
+                _searchResults.value = _cachedFilteredSongs.value ?: emptyList()
                 return@launch
             }
 
-            val data: List<Song> = when {
-                _cachedFilteredSongs.value.isNotEmpty() -> _cachedFilteredSongs.value
-                cachedSongs != null -> cachedSongs!!
-                else -> { return@launch }
-            }
+            val data: List<Song> = _cachedFilteredSongs.value ?: cachedSongs ?: return@launch
 
             val results = data.filter {
                 it.title?.contains(query, ignoreCase = true) == true ||
@@ -405,19 +406,18 @@ class HomeViewModel(
      * @param context The application context.
      * @return A list of folders.
      */
-    fun getSongFolders(context: Context): List<String> {
+    fun getSongFolders(context: Context): List<String> = getFolderSongCounts(context).keys.toList()
+
+    /** Every folder that directly contains songs, with how many. Feeds the folder picker tree (issue #21). */
+    fun getFolderSongCounts(context: Context): Map<String, Int> {
         return cachedFolders ?: run {
-            val folders = mutableListOf<String>()
-
+            val folders = LinkedHashMap<String, Int>()
             for (song in getAllSongs(context, SortValues.TITLE, SortOrders.ASCENDING)) {
-                val path = song.filePath
-                val folder = path?.substring(0, path.lastIndexOf("/"))
-                if (folder != null && !folders.contains(folder))
-                    folders.add(folder)
+                val folder = song.filePath?.let(::folderOf) ?: continue
+                folders[folder] = (folders[folder] ?: 0) + 1
             }
-
             cachedFolders = folders
-            cachedFolders!!
+            folders
         }
     }
 
@@ -426,31 +426,19 @@ class HomeViewModel(
      * @return A list of songs depending on the user's preferences. If no preferences are set, null is returned, so app will use all songs.
      */
     fun filterSongs() = viewModelScope.launch(Dispatchers.IO) {
-        hideFolders = userSettingsController.blacklistedFolders.isNotEmpty()
-        val songs = cachedSongs ?: run { _cachedFilteredSongs.value = emptyList(); return@launch }
+        val songs = cachedSongs ?: run { _cachedFilteredSongs.value = null; return@launch }
 
         // "Hide songs with lyrics" filters on the resolved lyric STATE (seeded from cache, refreshed off-disk),
         // not on raw .lrc file existence. This keeps it consistent with the tabs and songHasLyrics(): a plain
         // (UNSYNCED) .lrc counts as "no real synced lyrics", so such a song is NOT hidden and still shows under
         // "No lyrics". It also drops the per-song disk stat that used to run here.
-        fun notBlacklisted(song: Song): Boolean {
-            val path = song.filePath ?: return true
-            val folder = path.substring(0, path.lastIndexOf("/"))
-            return !userSettingsController.blacklistedFolders.contains(folder)
-        }
+        val hideLyrics = userSettingsController.hideLyrics
+        // Hidden folders + optional whitelist (issue #21); see FolderFilter for the rules.
+        val folderFilter = userSettingsController.folderFilter
 
-        _cachedFilteredSongs.value = when {
-            userSettingsController.hideLyrics && hideFolders ->
-                songs.filter { !songHasLyrics(it) && notBlacklisted(it) }
-
-            userSettingsController.hideLyrics ->
-                songs.filter { !songHasLyrics(it) }
-
-            hideFolders ->
-                songs.filter { notBlacklisted(it) }
-
-            else -> emptyList()
-        }
+        _cachedFilteredSongs.value =
+            if (!hideLyrics && !folderFilter.isActive) null
+            else songs.filter { (!hideLyrics || !songHasLyrics(it)) && folderFilter.isSongVisible(it.filePath) }
     }
 
     fun invertSongSelection() = viewModelScope.launch {
@@ -500,6 +488,34 @@ class HomeViewModel(
     /** Hidden paths paired with their song (null if the file is no longer in the library), for the unhide dialog. */
     fun hiddenSongEntries(): List<Pair<String, Song?>> =
         HiddenSongs.resolve(userSettingsController.hiddenSongs, cachedSongs ?: emptyList()) { it.filePath }
+
+    /** Folder picker: check/uncheck a folder and everything below it. */
+    fun setFolderVisible(folder: String, visible: Boolean) {
+        val known = cachedFolders?.keys ?: emptySet()
+        userSettingsController.updateFolderFilter(
+            userSettingsController.folderFilter.withFolderVisible(folder, visible, known)
+        )
+        filterSongs()
+    }
+
+    /** Folder picker: "Select all" / "Select none". */
+    fun setAllFoldersVisible(visible: Boolean) {
+        val counts = cachedFolders ?: emptyMap()
+        val roots = buildFolderTree(counts).map { it.path }
+        userSettingsController.updateFolderFilter(
+            userSettingsController.folderFilter.withAllVisible(visible, roots, counts.keys)
+        )
+        filterSongs()
+    }
+
+    /** Folder picker: switch mode. Folders visible right now stay visible; only new folders behave differently. */
+    fun setFolderFilterMode(mode: FolderFilterMode) {
+        val counts = cachedFolders ?: emptyMap()
+        userSettingsController.updateFolderFilter(
+            userSettingsController.folderFilter.withMode(mode, buildFolderTree(counts), counts.keys)
+        )
+        filterSongs()
+    }
 
     suspend fun getSongInfo(query: SongInfo): SongInfo? =
         lyricsProviderService.getSongInfo(query, provider = userSettingsController.selectedProvider)
@@ -561,7 +577,7 @@ class HomeViewModel(
                 artist = artist?.takeIf { it.isNotBlank() } ?: this.artist,
             )
         cachedSongs = cachedSongs?.map { it.patch() }
-        _cachedFilteredSongs.value = _cachedFilteredSongs.value.map { it.patch() }
+        _cachedFilteredSongs.value = _cachedFilteredSongs.value?.map { it.patch() }
         _searchResults.value = _searchResults.value.map { it.patch() }
         displaySongs = displaySongs.map { it.patch() }
         allSongs = allSongs?.map { it.patch() }
