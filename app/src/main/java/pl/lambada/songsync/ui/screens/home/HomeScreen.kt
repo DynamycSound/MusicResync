@@ -40,7 +40,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -59,8 +58,6 @@ import pl.lambada.songsync.domain.model.Song
 import pl.lambada.songsync.ui.LyricsFetchScreen
 import pl.lambada.songsync.ui.ScreenSettings
 import pl.lambada.songsync.ui.screens.home.components.FilterAndSongCount
-import pl.lambada.songsync.ui.screens.home.components.FiltersDialog
-import pl.lambada.songsync.ui.screens.home.components.HiddenSongsDialog
 import pl.lambada.songsync.ui.screens.home.components.HomeAppBar
 import pl.lambada.songsync.ui.screens.home.components.HomeSearchBar
 import pl.lambada.songsync.ui.screens.home.components.HomeSearchThing
@@ -203,7 +200,6 @@ fun HomeScreenLoaded(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val refreshState = rememberPullToRefreshState()
-    var showHiddenSongs by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
     PullToRefreshBox(
@@ -272,7 +268,10 @@ fun HomeScreenLoaded(
                         filterBar = {
                             FilterAndSongCount(
                                 displaySongsCount = viewModel.displaySongs.size,
-                                onFilterClick = { viewModel.showFilters = true },
+                                // Filters (and Hidden songs, reached from there) are full pages now, not popups.
+                                onFilterClick = {
+                                    navController.navigate(pl.lambada.songsync.ui.ScreenFilters) { launchSingleTop = true }
+                                },
                                 onSortClick = { viewModel.showSort = true },
                                 onSearchClick = {
                                     viewModel.showSearch = true
@@ -292,30 +291,6 @@ fun HomeScreenLoaded(
                                 )
                             },
                             onSortByChange = { viewModel.userSettingsController.updateSortBy(it) }
-                        )
-                    }
-
-                    if (viewModel.showFilters) {
-                        FiltersDialog(
-                            hideLyrics = viewModel.userSettingsController.hideLyrics,
-                            folderSongCounts = viewModel.getFolderSongCounts(context),
-                            folderFilter = viewModel.userSettingsController.folderFilter,
-                            onDismiss = { viewModel.showFilters = false },
-                            onFilterChange = { viewModel.filterSongs() },
-                            onHideLyricsChange = viewModel::onHideLyricsChange,
-                            onSetFolderVisible = viewModel::setFolderVisible,
-                            onSetAllFoldersVisible = viewModel::setAllFoldersVisible,
-                            onFolderFilterModeChange = viewModel::setFolderFilterMode,
-                            hiddenSongsCount = viewModel.userSettingsController.hiddenSongs.size,
-                            onHiddenSongsClick = { showHiddenSongs = true },
-                        )
-                    }
-
-                    if (showHiddenSongs) {
-                        HiddenSongsDialog(
-                            entries = viewModel.hiddenSongEntries(),
-                            onUnhide = viewModel::unhideSongs,
-                            onDismiss = { showHiddenSongs = false }
                         )
                     }
                 }

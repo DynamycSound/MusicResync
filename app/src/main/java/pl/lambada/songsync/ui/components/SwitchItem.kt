@@ -1,14 +1,19 @@
 package pl.lambada.songsync.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -17,12 +22,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.CombinedModifier
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * A settings row: label (+ optional [badge] pill, e.g. "Recommended") and description on the left, a switch on
+ * A settings row: optional leading [icon] tile, label (+ optional [badge] pill, e.g. "Recommended") and description on the left, a switch on
  * the right. The whole row is one toggleable target, so tapping anywhere flips it and TalkBack reads it as a
  * single switch.
  */
@@ -37,6 +44,7 @@ fun SwitchItem(
     ),
     description: String = "",
     badge: String? = null,
+    icon: ImageVector? = null,
     onClick: () -> Unit,
 ) {
     Row(
@@ -48,6 +56,10 @@ fun SwitchItem(
         ),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (icon != null) {
+            SettingsIconTile(icon = icon)
+            Spacer(modifier = Modifier.width(16.dp))
+        }
         Column(
             modifier = Modifier.weight(1f),
         ) {
@@ -80,6 +92,25 @@ fun SwitchItem(
             // The row's toggleable handles the click; a null handler keeps the switch from being a second,
             // separately-focusable target.
             onCheckedChange = null,
+        )
+    }
+}
+
+/** Leading icon for a settings-style row: the icon on a small rounded tonal tile. */
+@Composable
+fun SettingsIconTile(icon: ImageVector, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.size(22.dp),
         )
     }
 }
