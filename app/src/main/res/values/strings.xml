@@ -311,4 +311,18 @@
     <string name="batch_category_failed_title">Failed</string>
     <string name="batch_category_skipped_title">Skipped</string>
     <string name="batch_category_empty">Nothing here yet</string>
+
+    <!-- Now playing card (issue #19) -->
+    <string name="now_playing">Now playing</string>
+    <string name="now_playing_in_app">Now playing · %1$s</string>
+    <string name="now_playing_get_lyrics">Get lyrics</string>
+    <string name="now_playing_prompt_title">See what\'s playing</string>
+    <string name="now_playing_prompt_body">Allow notification access to get lyrics for the song playing in any app with one tap.</string>
+    <string name="now_playing_enable">Enable</string>
+    <string name="now_playing_not_now">Not now</string>
+    <string name="now_playing_app_info">App info</string>
+    <string name="now_playing_restricted_hint">Switch greyed out? Open App info, tap ⋮ and choose \"Allow restricted settings\", then try again.</string>
+    <string name="now_playing_setting_title">Now playing card</string>
+    <string name="now_playing_setting_description">Shows the song playing in other apps at the top of Home. Tap it to get its lyrics. Uses notification access only to see the media player; notifications are not read.</string>
+    <string name="now_playing_setting_needs_access">Tap to allow notification access, needed to see what\'s playing.</string>
 </resources>

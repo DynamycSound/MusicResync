@@ -213,6 +213,15 @@ fun HomeScreenLoaded(
             horizontalAlignment = Alignment.CenterHorizontally,
             contentPadding = scaffoldPadding
         ) {
+            // Optional "Now playing" card (issue #19); renders nothing unless enabled and something is playing.
+            item(key = "now_playing") {
+                pl.lambada.songsync.nowplaying.NowPlayingHomeSection(
+                    librarySongs = viewModel.allSongs.orEmpty(),
+                    hasLyrics = { viewModel.lyricStateFor(it) in pl.lambada.songsync.nowplaying.lyricStatesWithLyrics },
+                    navController = navController,
+                )
+            }
+
             item {
                 Column(
                     modifier = Modifier.padding(

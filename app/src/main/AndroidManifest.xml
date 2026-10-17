@@ -71,6 +71,19 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Optional "Now playing" card (issue #19). Only lets the user grant Notification access, which Android
+             requires before it shares other apps' media sessions; it reads no notifications. Must be exported with
+             the BIND_NOTIFICATION_LISTENER_SERVICE permission so only the system can bind it. -->
+        <service
+            android:name=".nowplaying.NowPlayingListenerService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- File Provider -->
         <provider
             android:name="androidx.core.content.FileProvider"

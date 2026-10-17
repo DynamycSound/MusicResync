@@ -10,9 +10,10 @@ import java.io.File
 import java.nio.file.Files
 
 fun isLegacyFileAccessRequired(filePath: String?): Boolean {
-    // Before Android 11, not in internal storage
+    // Before Android 11, not in internal storage. A blank path (a "Now playing" track that isn't a library file)
+    // is saved to Downloads on internal storage, so it needs no legacy access either.
     return Build.VERSION.SDK_INT < Build.VERSION_CODES.R
-            && filePath?.contains("/storage/emulated/0/") == false
+            && !filePath.isNullOrBlank() && !filePath.contains("/storage/emulated/0/")
 }
 
 fun openFileFromPath(context: Context, filePath: String) {
